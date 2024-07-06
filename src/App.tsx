@@ -12,6 +12,91 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+
+interface TOCItem {
+  title: string;
+  pageNumber: number;
+  items?: TOCItem[];
+}
+
+interface TOCProps {
+  pdf: PDFDocumentProxy | null;
+  onItemClick: (pageNumber: number) => void;
+}
+
+const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
+  const [outline, setOutline] = useState<TOCItem[]>([]);
+
+useEffect(() => {
+    const fetchOutline = async () => {
+      if (pdf) {
+        const outline = await pdf.getOutline();
+        if (outline) {
+          const processOutline = async (items: any[]): Promise<TOCItem[]> => {
+            const processedItems = await Promise.all(
+              items.map(async (item) => {
+                let pageNumber = 1;
+                if (item.dest) {
+                  const pageIndex = await pdf.getPageIndex(item.dest[0]);
+                  pageNumber = pageIndex + 1;
+                }
+                return {
+                  title: item.title,
+                  pageNumber,
+                  items: item.items ? await processOutline(item.items) : undefined,
+                };
+              })
+            );
+            return processedItems;
+          };
+
+          const processedOutline = await processOutline(outline);
+          setOutline(processedOutline);
+        }
+      }
+    };
+
+    fetchOutline();
+  }, [pdf]);
+
+  const renderTOCItems = (items: TOCItem[], depth = 0) => {
+    return (
+      <ul className={`pl-${depth * 4}`}>
+        {items.map((item, index) => (
+          <li key={index} className="my-1">
+            <button
+              className="text-left hover:underline focus:outline-none"
+              onClick={() => onItemClick(item.pageNumber)}
+            >
+              {item.title}
+            </button>
+            {item.items && renderTOCItems(item.items, depth + 1)}
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  return (
+    <div className="max-h-96 overflow-y-auto p-4 bg-white shadow-md rounded-md">
+      <h2 className="text-lg font-semibold mb-2">Table of Contents</h2>
+      {outline.length > 0 ? (
+        renderTOCItems(outline)
+      ) : (
+        <p>No table of contents available</p>
+      )}
+    </div>
+  );
+};
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -37,6 +122,8 @@ const Viewer = ({ file }: ViewerProps) => {
   const [containerWidth, setContainerWidth] = useState<number>();
   const [numPages, setNumPages] = useState<number>();
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [selectedText, setSelectedText] = useState<string>('');
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -47,10 +134,9 @@ const Viewer = ({ file }: ViewerProps) => {
 
   useResizeObserver(containerRef, resizeObserverOptions, onResize);
 
-  const onDocumentLoadSuccess = ({
-    numPages: nextNumPages,
-  }: PDFDocumentProxy): void => {
-    setNumPages(nextNumPages);
+  const onDocumentLoadSuccess = (pdf: PDFDocumentProxy): void => {
+    setNumPages(pdf.numPages);
+    setPdf(pdf);
   };
 
   useEffect(() => {
@@ -77,34 +163,111 @@ const Viewer = ({ file }: ViewerProps) => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
   };
 
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger>
-        <div ref={setContainerRef}>
-          <Document
-            file={file}
-            onLoadSuccess={onDocumentLoadSuccess}
-            options={options}
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection) {
+      setSelectedText(selection.toString());
+    }
+  };
+
+  const printSelectedText = () => {
+    console.log('Selected Text:', selectedText);
+  };
+
+const renderPaginationItems = () => {
+    if (!numPages) return null;
+
+    const items = [];
+    const maxVisiblePages = 5;
+    const halfVisible = Math.floor(maxVisiblePages / 2);
+
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(numPages, start + maxVisiblePages - 1);
+
+    if (end - start + 1 < maxVisiblePages) {
+      start = Math.max(1, end - maxVisiblePages + 1);
+    }
+
+    if (start > 1) {
+      items.push(
+        <PaginationItem key="ellipsis-start">
+          <PaginationEllipsis />
+        </PaginationItem>
+      );
+    }
+
+    for (let i = start; i <= end; i++) {
+      items.push(
+        <PaginationItem key={i}>
+          <PaginationLink
+            onClick={() => setCurrentPage(i)}
+            isActive={currentPage === i}
           >
-            <Page
-              pageNumber={currentPage}
-              width={
-                containerWidth ? Math.min(containerWidth, maxWidth) : maxWidth
-              }
-            />
-          </Document>
-          {numPages && (
-            <div>
-              Page {currentPage} of {numPages}
+            {i}
+          </PaginationLink>
+        </PaginationItem>
+      );
+    }
+
+    if (end < numPages) {
+      items.push(
+        <PaginationItem key="ellipsis-end">
+          <PaginationEllipsis />
+        </PaginationItem>
+      );
+    }
+
+    return items;
+  };
+
+  return (
+    <div className="flex">
+      <div className="w-1/4 mr-4">
+        <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
+      </div>
+      <div className="w-3/4">
+        <ContextMenu>
+          <ContextMenuTrigger>
+            <div
+              ref={setContainerRef}
+              onMouseUp={handleTextSelection}
+              onTouchEnd={handleTextSelection}
+            >
+              <Document
+                file={file}
+                onLoadSuccess={onDocumentLoadSuccess}
+                options={options}
+              >
+                <Page
+                  pageNumber={currentPage}
+                  width={
+                    containerWidth ? Math.min(containerWidth, maxWidth) : maxWidth
+                  }
+                />
+              </Document>
+              {numPages && (
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious onClick={prevPage} />
+                    </PaginationItem>
+                    {renderPaginationItems()}
+                    <PaginationItem>
+                      <PaginationNext onClick={nextPage} />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
             </div>
-          )}
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onClick={prevPage}>Previous Page</ContextMenuItem>
-        <ContextMenuItem onClick={nextPage}>Next Page</ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onClick={prevPage}>Previous Page</ContextMenuItem>
+            <ContextMenuItem onClick={nextPage}>Next Page</ContextMenuItem>
+            <ContextMenuItem onClick={printSelectedText}>Print Selected Text</ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
+    </div>
   );
 };
 
