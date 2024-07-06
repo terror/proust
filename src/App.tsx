@@ -10,7 +10,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
@@ -341,7 +340,7 @@ const Navbar = () => {
   );
 };
 
-function CommandMenu({ onOpenFile }: { onOpenFile: () => void }) {
+function CommandMenu({ onOpenFile, onOpenWorkspaces }: { onOpenFile: () => void; onOpenWorkspaces: () => void }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -368,11 +367,16 @@ function CommandMenu({ onOpenFile }: { onOpenFile: () => void }) {
             }}
           >
             <FileIcon className='mr-2 h-4 w-4' />
-            <span>Open</span>
+            <span>Open a file</span>
           </CommandItem>
-          <CommandItem>
+          <CommandItem
+            onSelect={() => {
+              onOpenWorkspaces();
+              setOpen(false);
+            }}
+          >
             <BookText className='mr-2 h-4 w-4' />
-            <span>Workspaces</span>
+            <span>View workspaces</span>
           </CommandItem>
         </CommandGroup>
       </CommandList>
@@ -395,6 +399,7 @@ const App: React.FC = () => {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
   const [db, setDb] = useState<IDBPDatabase | null>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   useEffect(() => {
     const initDB = async () => {
@@ -435,6 +440,10 @@ const App: React.FC = () => {
       reader.readAsArrayBuffer(file);
     });
   };
+
+const openWorkspaces = useCallback(() => {
+    setIsSheetOpen(true);
+  }, []);
 
   const onFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -497,13 +506,16 @@ const App: React.FC = () => {
     }
   }, [db, pdfHistory, saveToLocalStorage]);
 
-  return (
+return (
     <div className='m-2'>
       <Navbar />
       <main className='m-8 flex-grow flex items-center'>
         {fileUrl && <Viewer file={fileUrl} />}
       </main>
-      <CommandMenu onOpenFile={() => fileInputRef.current?.click()} />
+      <CommandMenu
+        onOpenFile={() => fileInputRef.current?.click()}
+        onOpenWorkspaces={openWorkspaces}
+      />
       <input
         ref={fileInputRef}
         type='file'
@@ -511,12 +523,7 @@ const App: React.FC = () => {
         onChange={onFileChange}
         style={{ display: 'none' }}
       />
-      <Sheet>
-        <SheetTrigger asChild>
-          <Button variant='outline' className='fixed bottom-4 right-4'>
-            Workspaces
-          </Button>
-        </SheetTrigger>
+      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent>
           <SheetHeader>
             <SheetTitle>Workspaces</SheetTitle>
