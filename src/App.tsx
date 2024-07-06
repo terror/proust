@@ -1,23 +1,4 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { pdfjs, Document, Page } from 'react-pdf';
-import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { useResizeObserver } from '@wojtekmaj/react-hooks';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import { openDB, IDBPDatabase } from 'idb';
-import axios from 'axios';
-import { cn } from './lib/utils';
-
-import { MathExtension } from '@aarkue/tiptap-math-extension'
-import 'katex/dist/katex.min.css';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-
+import { Button } from '@/components/ui/button';
 import {
   CommandDialog,
   CommandEmpty,
@@ -26,9 +7,6 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-
-import { File as FileIcon, BookText } from 'lucide-react';
-
 import {
   ContextMenu,
   ContextMenuContent,
@@ -38,6 +16,12 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+} from '@/components/ui/navigation-menu';
+import {
   Pagination,
   PaginationContent,
   PaginationEllipsis,
@@ -46,16 +30,42 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ModeToggle } from './components/mode-toggle';
 import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-} from '@/components/ui/navigation-menu';
-import { Button } from './components/ui/button';
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Textarea } from '@/components/ui/textarea';
+import { MathExtension } from '@aarkue/tiptap-math-extension';
+import { Extension } from '@tiptap/core';
+import Placeholder from '@tiptap/extension-placeholder';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { ReactRenderer } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Suggestion from '@tiptap/suggestion';
+import { useResizeObserver } from '@wojtekmaj/react-hooks';
+import axios from 'axios';
+import { Command } from 'cmdk';
+import { IDBPDatabase, openDB } from 'idb';
+import 'katex/dist/katex.min.css';
+import { BookText, File as FileIcon, MessageSquare } from 'lucide-react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { toast } from 'sonner';
+import tippy from 'tippy.js';
+
+import { ModeToggle } from './components/mode-toggle';
 
 interface TOCItem {
   title: string;
@@ -126,7 +136,7 @@ const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
   return (
     <ScrollArea className='h-[900px]'>
       <div className='p-4'>
-        <h2 className='text-lg font-semibold mb-2'>Table of Contents</h2>
+        <h2 className='mb-2 text-lg font-semibold'>Table of Contents</h2>
         {outline.length > 0 ? (
           renderTOCItems(outline)
         ) : (
@@ -156,21 +166,6 @@ type WorkspaceProps = {
   file: PDFFile;
 };
 
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Suggestion from '@tiptap/suggestion';
-import { ReactRenderer } from '@tiptap/react';
-import tippy from 'tippy.js';
-import { Extension } from '@tiptap/core';
-
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
-import { Textarea } from './components/ui/textarea';
-
 const SlashCommands = Extension.create({
   name: 'slashCommands',
   addProseMirrorPlugins() {
@@ -178,16 +173,15 @@ const SlashCommands = Extension.create({
       Suggestion({
         editor: this.editor,
         char: '/',
-        items: query => [
+        items: (query) => [
           { title: 'Ask Question', command: () => askQuestion(query.query) },
-          // Add more commands as needed
         ],
         render: () => {
           let component: any;
           let popup: any;
 
           return {
-            onStart: props => {
+            onStart: (props) => {
               component = new ReactRenderer(EditorCommandList, {
                 props,
                 editor: props.editor,
@@ -203,6 +197,7 @@ const SlashCommands = Extension.create({
                 placement: 'bottom-start',
               });
             },
+
             onUpdate(props) {
               component.updateProps(props);
 
@@ -210,6 +205,7 @@ const SlashCommands = Extension.create({
                 getReferenceClientRect: props.clientRect,
               });
             },
+
             onKeyDown(props) {
               if (props.event.key === 'Escape') {
                 popup[0].hide();
@@ -218,6 +214,7 @@ const SlashCommands = Extension.create({
 
               return component.ref?.onKeyDown(props);
             },
+
             onExit() {
               popup[0].destroy();
               component.destroy();
@@ -230,32 +227,50 @@ const SlashCommands = Extension.create({
 });
 
 interface EditorCommandListProps {
-  items: Array<{ title: string; command: () => void }>;
-  command: (item: { title: string; command: () => void }) => void;
+  items: Array<{ title: string; icon: string; command: () => void }>;
+  command: (item: { title: string; icon: string; command: () => void }) => void;
 }
 
-const EditorCommandList: React.FC<EditorCommandListProps> = ({ items, command }) => (
-  <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-    {items && items.map((item, index) => (
-      <button
-        key={index}
-        onClick={() => command(item)}
-        className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-      >
-        {item.title}
-      </button>
-    ))}
-  </div>
+const iconMap: { [key: string]: React.ReactNode } = {
+  'Ask Question': <MessageSquare className='h-5 w-5' />,
+};
+
+export const EditorCommandList: React.FC<EditorCommandListProps> = ({
+  items,
+  command,
+}) => (
+  <Command className='overflow-hidden rounded-lg border bg-white shadow-md dark:bg-gray-800'>
+    <Command.Input
+      placeholder='Search for a command...'
+      className='border-b px-4 py-3 text-sm focus:outline-none dark:bg-gray-700 dark:text-white'
+    />
+    <Command.List className='max-h-64 overflow-y-auto py-2'>
+      <Command.Empty className='px-4 py-2 text-sm text-gray-500 dark:text-gray-400'>
+        No results found.
+      </Command.Empty>
+      {items.map((item, index) => (
+        <Command.Item
+          key={index}
+          onSelect={() => command(item)}
+          className='flex cursor-pointer items-center px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700'
+        >
+          <span className='mr-3 text-gray-500 dark:text-gray-400'>
+            {iconMap[item.icon] || iconMap['Ask Question']}
+          </span>
+          <span className='flex-grow'>{item.title}</span>
+        </Command.Item>
+      ))}
+    </Command.List>
+  </Command>
 );
 
 const askQuestion = async (query: string) => {
   // Implement your question-answering logic here
   // This could involve calling an API or using the existing answerQuestion function
-  console.log("Asking question:", query);
+  console.log('Asking question:', query);
   // For now, we'll just return a placeholder response
-  return "This is a placeholder response to your question: " + query;
+  return 'This is a placeholder response to your question: ' + query;
 };
-
 
 interface EditorProps {
   content: string;
@@ -289,8 +304,8 @@ export const Editor: React.FC<EditorProps> = ({
           items: (query: string) => [
             {
               title: 'Ask Question',
-              command: ({  }: { editor: any }) => {
-                askQuestion(query).then(response => {
+              command: ({}: { editor: any }) => {
+                askQuestion(query).then((response) => {
                   setAiResponse(response);
                 });
               },
@@ -304,7 +319,7 @@ export const Editor: React.FC<EditorProps> = ({
           ],
         },
       }),
-MathExtension.configure({ evaluation: true })
+      MathExtension.configure({ evaluation: true }),
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -326,12 +341,18 @@ MathExtension.configure({ evaluation: true })
 
   return (
     <div className={className}>
-      <EditorContent editor={editor} rendereditable={<CustomEditable placeholder={placeholder}/>} />
+      <EditorContent
+        editor={editor}
+        rendereditable={<CustomEditable placeholder={placeholder} />}
+      />
       {aiResponse && (
-        <div className="mt-4">
+        <div className='mt-4'>
           <p>AI Response:</p>
-          <div className="bg-gray-100 p-2 rounded">{aiResponse}</div>
-          <button onClick={insertAiResponse} className="mt-2 bg-blue-500 text-white px-4 py-2 rounded">
+          <div className='rounded bg-gray-100 p-2'>{aiResponse}</div>
+          <button
+            onClick={insertAiResponse}
+            className='mt-2 rounded bg-blue-500 px-4 py-2 text-white'
+          >
             Insert Response
           </button>
         </div>
@@ -496,7 +517,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
                 />
               </Document>
               {numPages && (
-                <Pagination className='mt-4 mb-4'>
+                <Pagination className='mb-4 mt-4'>
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious onClick={prevPage} />
@@ -528,7 +549,12 @@ const Workspace = ({ file }: WorkspaceProps) => {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={25}>
-        <Editor placeholder='Take some notes...' className='m-4' content={content} onChange={setContent} />
+        <Editor
+          placeholder='Take some notes...'
+          className='m-4'
+          content={content}
+          onChange={setContent}
+        />
       </ResizablePanel>
     </ResizablePanelGroup>
   );
@@ -536,13 +562,13 @@ const Workspace = ({ file }: WorkspaceProps) => {
 
 const Navbar = () => {
   return (
-    <div className='flex justify-between items-center p-4'>
+    <div className='flex items-center justify-between p-4'>
       <NavigationMenu>
         <NavigationMenuList>
           <NavigationMenuItem>
             <NavigationMenuLink className='text-xl font-semibold'>
               proust{' '}
-              <p className='italic text-sm text-muted-foreground'>
+              <p className='text-sm italic text-muted-foreground'>
                 a learning tool
               </p>
             </NavigationMenuLink>
@@ -603,8 +629,6 @@ function CommandMenu({
     </CommandDialog>
   );
 }
-
-
 
 interface PDFHistory {
   name: string;
@@ -735,8 +759,7 @@ const App: React.FC = () => {
 
     const embeddingsArray = await getEmbeddings(textChunks);
 
-    if (embeddingsArray)
-      setEmbeddings(embeddingsArray);
+    if (embeddingsArray) setEmbeddings(embeddingsArray);
 
     if (db) {
       await db.put('chunks', textChunks, pdfFile.name);
@@ -745,7 +768,7 @@ const App: React.FC = () => {
 
     const elapsed = performance.now() - time;
 
-    toast(`Successfully indexed ${pdfFile.name} in ${elapsed}ms`)
+    toast(`Successfully indexed ${pdfFile.name} in ${elapsed}ms`);
   };
 
   const loadIndex = async (fileName: string) => {
@@ -821,7 +844,11 @@ const App: React.FC = () => {
           const arrayBuffer = await db.get('pdfs', historyItem.name);
 
           if (arrayBuffer) {
-            setFileUrl(URL.createObjectURL(new Blob([arrayBuffer], { type: 'application/pdf' })));
+            setFileUrl(
+              URL.createObjectURL(
+                new Blob([arrayBuffer], { type: 'application/pdf' })
+              )
+            );
 
             const updatedHistory = pdfHistory.map((item) =>
               item.name === historyItem.name
@@ -911,9 +938,7 @@ const App: React.FC = () => {
   return (
     <div className='m-2'>
       <Navbar />
-      <main className='m-8'>
-        {fileUrl && <Workspace file={fileUrl} />}
-      </main>
+      <main className='m-8'>{fileUrl && <Workspace file={fileUrl} />}</main>
       <CommandMenu
         onOpenFile={() => fileInputRef.current?.click()}
         onOpenWorkspaces={openWorkspaces}
@@ -933,12 +958,12 @@ const App: React.FC = () => {
               Your recently opened PDFs. Click on one to open it again.
             </SheetDescription>
           </SheetHeader>
-          <ScrollArea className='h-[80vh] w-full mt-4'>
+          <ScrollArea className='mt-4 h-[80vh] w-full'>
             {pdfHistory.map((item, index) => (
               <Button
                 key={index}
                 variant='ghost'
-                className='w-full justify-start mb-2'
+                className='mb-2 w-full justify-start'
                 onClick={() => openHistoryFile(item)}
               >
                 {item.name}
