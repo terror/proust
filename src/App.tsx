@@ -1,9 +1,14 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { pdfjs, Document, Page } from 'react-pdf';
-import { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import { openDB, IDBPDatabase } from 'idb';
+import axios from 'axios';
+import { cn } from './lib/utils';
 
+import { MathExtension } from '@aarkue/tiptap-math-extension'
+import 'katex/dist/katex.min.css';
 import {
   Sheet,
   SheetContent,
@@ -119,13 +124,15 @@ const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
   };
 
   return (
-    <ScrollArea className='h-[calc(100vh-200px)] w-64 p-4'>
-      <h2 className='text-lg font-semibold mb-2'>Table of Contents</h2>
-      {outline.length > 0 ? (
-        renderTOCItems(outline)
-      ) : (
-        <p>No table of contents available</p>
-      )}
+    <ScrollArea className='h-[900px]'>
+      <div className='p-4'>
+        <h2 className='text-lg font-semibold mb-2'>Table of Contents</h2>
+        {outline.length > 0 ? (
+          renderTOCItems(outline)
+        ) : (
+          <p>No table of contents available</p>
+        )}
+      </div>
     </ScrollArea>
   );
 };
@@ -141,15 +148,199 @@ const options = {
 };
 
 const resizeObserverOptions = {};
-const maxWidth = 800;
+const maxWidth = 600;
 
 type PDFFile = string | File | null;
 
-type ViewerProps = {
+type WorkspaceProps = {
   file: PDFFile;
 };
 
-const Viewer = ({ file }: ViewerProps) => {
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import Suggestion from '@tiptap/suggestion';
+import { ReactRenderer } from '@tiptap/react';
+import tippy from 'tippy.js';
+import { Extension } from '@tiptap/core';
+
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
+import { Textarea } from './components/ui/textarea';
+
+const SlashCommands = Extension.create({
+  name: 'slashCommands',
+  addProseMirrorPlugins() {
+    return [
+      Suggestion({
+        editor: this.editor,
+        char: '/',
+        items: query => [
+          { title: 'Ask Question', command: () => askQuestion(query.query) },
+          // Add more commands as needed
+        ],
+        render: () => {
+          let component: any;
+          let popup: any;
+
+          return {
+            onStart: props => {
+              component = new ReactRenderer(EditorCommandList, {
+                props,
+                editor: props.editor,
+              });
+
+              popup = tippy('body', {
+                getReferenceClientRect: props.clientRect,
+                appendTo: () => document.body,
+                content: component.element,
+                showOnCreate: true,
+                interactive: true,
+                trigger: 'manual',
+                placement: 'bottom-start',
+              });
+            },
+            onUpdate(props) {
+              component.updateProps(props);
+
+              popup[0].setProps({
+                getReferenceClientRect: props.clientRect,
+              });
+            },
+            onKeyDown(props) {
+              if (props.event.key === 'Escape') {
+                popup[0].hide();
+                return true;
+              }
+
+              return component.ref?.onKeyDown(props);
+            },
+            onExit() {
+              popup[0].destroy();
+              component.destroy();
+            },
+          };
+        },
+      }),
+    ];
+  },
+});
+
+interface EditorCommandListProps {
+  items: Array<{ title: string; command: () => void }>;
+  command: (item: { title: string; command: () => void }) => void;
+}
+
+const EditorCommandList: React.FC<EditorCommandListProps> = ({ items, command }) => (
+  <div className="bg-white shadow-xl rounded-lg overflow-hidden">
+    {items && items.map((item, index) => (
+      <button
+        key={index}
+        onClick={() => command(item)}
+        className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+      >
+        {item.title}
+      </button>
+    ))}
+  </div>
+);
+
+const askQuestion = async (query: string) => {
+  // Implement your question-answering logic here
+  // This could involve calling an API or using the existing answerQuestion function
+  console.log("Asking question:", query);
+  // For now, we'll just return a placeholder response
+  return "This is a placeholder response to your question: " + query;
+};
+
+
+interface EditorProps {
+  content: string;
+  onChange: (content: string) => void;
+  onBlur?: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  className?: string;
+}
+
+const CustomEditable = React.forwardRef((props: any, ref: any) => {
+  return <Textarea className='text-lg' {...props} ref={ref} />;
+});
+
+export const Editor: React.FC<EditorProps> = ({
+  content,
+  onChange,
+  className,
+  onBlur,
+  placeholder = "What's on your mind?",
+  autoFocus = false,
+}) => {
+  const [aiResponse, setAiResponse] = useState('');
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({ placeholder }),
+      SlashCommands.configure({
+        suggestion: {
+          items: (query: string) => [
+            {
+              title: 'Ask Question',
+              command: ({  }: { editor: any }) => {
+                askQuestion(query).then(response => {
+                  setAiResponse(response);
+                });
+              },
+            },
+            {
+              title: 'Insert LaTeX',
+              command: ({ editor }: { editor: any }) => {
+                editor.commands.insertContent('$$\\LaTeX$$');
+              },
+            },
+          ],
+        },
+      }),
+MathExtension.configure({ evaluation: true })
+    ],
+    content,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML());
+    },
+    onBlur,
+    autofocus: autoFocus,
+    editorProps: {
+      attributes: {
+        class: 'prose max-w-none focus:outline-none',
+      },
+    },
+  });
+
+  const insertAiResponse = useCallback(() => {
+    editor?.commands.insertContent(aiResponse);
+    setAiResponse('');
+  }, [editor, aiResponse]);
+
+  return (
+    <div className={className}>
+      <EditorContent editor={editor} rendereditable={<CustomEditable placeholder={placeholder}/>} />
+      {aiResponse && (
+        <div className="mt-4">
+          <p>AI Response:</p>
+          <div className="bg-gray-100 p-2 rounded">{aiResponse}</div>
+          <button onClick={insertAiResponse} className="mt-2 bg-blue-500 text-white px-4 py-2 rounded">
+            Insert Response
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Workspace = ({ file }: WorkspaceProps) => {
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
 
@@ -158,6 +349,7 @@ const Viewer = ({ file }: ViewerProps) => {
   const [numPages, setNumPages] = useState<number>();
   const [selectedText, setSelectedText] = useState<string>('');
   const [scale, setScale] = useState<number>(1);
+  const [content, setContent] = useState<string>('');
   const [key, setKey] = useState<number>(0); // New state for forcing re-render
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
@@ -269,11 +461,17 @@ const Viewer = ({ file }: ViewerProps) => {
   };
 
   return (
-    <div className='flex h-[calc(100vh-200px)]'>
-      <div className='mr-4 mt-2'>
-        <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
-      </div>
-      <div className='mt-2'>
+    <ResizablePanelGroup
+      className='h-[calc(100vh-120px)]'
+      direction='horizontal'
+    >
+      <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
+        <div className='h-full overflow-hidden'>
+          <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
+        </div>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel className='m-4'>
         <ContextMenu>
           <ContextMenuTrigger>
             <div
@@ -327,8 +525,12 @@ const Viewer = ({ file }: ViewerProps) => {
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
-      </div>
-    </div>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={25}>
+        <Editor placeholder='Take some notes...' className='m-4' content={content} onChange={setContent} />
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 };
 
@@ -402,15 +604,13 @@ function CommandMenu({
   );
 }
 
-import { openDB, IDBPDatabase } from 'idb';
-import axios from 'axios';
-import { Progress } from './components/ui/progress';
-import { Input } from './components/ui/input';
+
 
 interface PDFHistory {
   name: string;
   lastOpened: string;
   size: number;
+  notes: string;
 }
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -422,13 +622,11 @@ const App: React.FC = () => {
   const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
   const [db, setDb] = useState<IDBPDatabase | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [_indexingStatus, setIndexingStatus] = useState<string>('');
   const [embeddings, setEmbeddings] = useState<number[][]>([]);
   const [chunks, setChunks] = useState<string[]>([]);
-  const [indexingProgress, setIndexingProgress] = useState<number>(0);
-  const [isIndexing, setIsIndexing] = useState<boolean>(false);
-  const [question, setQuestion] = useState<string>('');
-  const [answer, setAnswer] = useState<string>('');
+  const [question, _setQuestion] = useState<string>('');
+  const [_answer, setAnswer] = useState<string>('');
+  const [notes, _setNotes] = useState<string>('');
 
   useEffect(() => {
     const initDB = async () => {
@@ -476,17 +674,23 @@ const App: React.FC = () => {
     });
   };
 
+  /*
+   * Extract text from PDF using pdf.js.
+   */
   const extractTextFromPDF = async (
     arrayBuffer: ArrayBuffer
   ): Promise<string> => {
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+
     let fullText = '';
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       const pageText = content.items.map((item: any) => item.str).join(' ');
       fullText += pageText + ' ';
     }
+
     return fullText;
   };
 
@@ -520,35 +724,28 @@ const App: React.FC = () => {
     }
   };
 
-const indexPDF = async (pdfFile: File) => {
-    setIsIndexing(true);
-    setIndexingProgress(0);
-    setIndexingStatus('Extracting text from PDF...');
+  const indexPDF = async (pdfFile: File) => {
+    const time = performance.now();
+
     const arrayBuffer = await processPDF(pdfFile);
     const text = await extractTextFromPDF(arrayBuffer);
-    setIndexingProgress(20);
 
-    setIndexingStatus('Chunking text...');
     const textChunks = chunkText(text);
     setChunks(textChunks);
-    setIndexingProgress(40);
 
-    setIndexingStatus('Generating embeddings...');
     const embeddingsArray = await getEmbeddings(textChunks);
-    if (embeddingsArray) {
-      setEmbeddings(embeddingsArray);
-    }
-    setIndexingProgress(80);
 
-    // Save chunks and embeddings
+    if (embeddingsArray)
+      setEmbeddings(embeddingsArray);
+
     if (db) {
       await db.put('chunks', textChunks, pdfFile.name);
       await db.put('embeddings', embeddingsArray, pdfFile.name);
     }
 
-    setIndexingStatus('Indexing complete');
-    setIndexingProgress(100);
-    setIsIndexing(false);
+    const elapsed = performance.now() - time;
+
+    toast(`Successfully indexed ${pdfFile.name} in ${elapsed}ms`)
   };
 
   const loadIndex = async (fileName: string) => {
@@ -559,10 +756,10 @@ const indexPDF = async (pdfFile: File) => {
       if (storedChunks && storedEmbeddings) {
         setChunks(storedChunks);
         setEmbeddings(storedEmbeddings);
-        setIndexingStatus('Index loaded from storage');
         return true;
       }
     }
+
     return false;
   };
 
@@ -570,67 +767,71 @@ const indexPDF = async (pdfFile: File) => {
     setIsSheetOpen(true);
   }, []);
 
-
-  const onFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile && db) {
-      if (selectedFile.size > MAX_FILE_SIZE) {
-        toast(`File is too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`);
-        return;
-      }
-
-      try {
-        const arrayBuffer = await processPDF(selectedFile);
-        const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        setFileUrl(url);
-
-        // Store PDF in IndexedDB
-        await db.put('pdfs', arrayBuffer, selectedFile.name);
-
-        const newHistory = [
-          {
-            name: selectedFile.name,
-            lastOpened: new Date().toISOString(),
-            size: selectedFile.size,
-          },
-          ...pdfHistory.filter((item) => item.name !== selectedFile.name),
-        ].slice(0, 10);
-
-        setPdfHistory(newHistory);
-        saveToLocalStorage(newHistory);
-
-        // Check if index exists, if not, create it
-        const indexLoaded = await loadIndex(selectedFile.name);
-        if (!indexLoaded) {
-          await indexPDF(selectedFile);
+  const onFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = event.target.files?.[0];
+      if (selectedFile && db) {
+        if (selectedFile.size > MAX_FILE_SIZE) {
+          toast(
+            `File is too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`
+          );
+          return;
         }
-      } catch (error) {
-        console.error('Error processing file:', error);
-        toast('Failed to process the PDF file. Please try again.');
+
+        try {
+          const arrayBuffer = await processPDF(selectedFile);
+          const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          setFileUrl(url);
+
+          // Store PDF in IndexedDB
+          await db.put('pdfs', arrayBuffer, selectedFile.name);
+
+          const newHistory = [
+            {
+              name: selectedFile.name,
+              lastOpened: new Date().toISOString(),
+              size: selectedFile.size,
+              notes,
+            },
+            ...pdfHistory.filter((item) => item.name !== selectedFile.name),
+          ].slice(0, 10);
+
+          setPdfHistory(newHistory);
+          saveToLocalStorage(newHistory);
+
+          // Check if index exists, if not, create it
+          const indexLoaded = await loadIndex(selectedFile.name);
+          if (!indexLoaded) {
+            await indexPDF(selectedFile);
+          }
+        } catch (error) {
+          console.error('Error processing file:', error);
+          toast('Failed to process the PDF file. Please try again.');
+        }
       }
-    }
-  }, [db, pdfHistory, saveToLocalStorage]);
+    },
+    [db, pdfHistory, saveToLocalStorage]
+  );
 
   const openHistoryFile = useCallback(
     async (historyItem: PDFHistory) => {
       if (db) {
         try {
           const arrayBuffer = await db.get('pdfs', historyItem.name);
+
           if (arrayBuffer) {
-            const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            setFileUrl(url);
+            setFileUrl(URL.createObjectURL(new Blob([arrayBuffer], { type: 'application/pdf' })));
 
             const updatedHistory = pdfHistory.map((item) =>
               item.name === historyItem.name
                 ? { ...item, lastOpened: new Date().toISOString() }
                 : item
             );
+
             setPdfHistory(updatedHistory);
             saveToLocalStorage(updatedHistory);
 
-            // Load chunks and embeddings
             await loadIndex(historyItem.name);
           } else {
             toast(
@@ -701,7 +902,6 @@ const indexPDF = async (pdfFile: File) => {
 
       setAnswer(response.data.choices[0].message.content);
     } catch (error) {
-      console.error('Error getting answer:', error);
       setAnswer(
         'Sorry, I encountered an error while trying to answer your question.'
       );
@@ -709,34 +909,10 @@ const indexPDF = async (pdfFile: File) => {
   };
 
   return (
- <div className='m-2'>
+    <div className='m-2'>
       <Navbar />
-      <main className='m-8 flex-grow flex flex-col items-center'>
-        {fileUrl && <Viewer file={fileUrl} />}
-        {isIndexing && (
-          <div className='w-full max-w-md mt-4'>
-            <p>Indexing PDF: {Math.round(indexingProgress)}% complete</p>
-            <Progress value={indexingProgress} className="w-full" />
-          </div>
-        )}
-        <div className='mt-4 w-full max-w-md'>
-          <Input
-            type='text'
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder='Ask a question about the PDF'
-            className='w-full p-2 border rounded'
-          />
-          <Button variant='outline' onClick={answerQuestion} className='mt-2 w-full'>
-            Ask
-          </Button>
-          {answer && (
-            <div className='mt-4 p-4 rounded'>
-              <h3 className='font-bold'>Answer:</h3>
-              <p>{answer}</p>
-            </div>
-          )}
-        </div>
+      <main className='m-8'>
+        {fileUrl && <Workspace file={fileUrl} />}
       </main>
       <CommandMenu
         onOpenFile={() => fileInputRef.current?.click()}
