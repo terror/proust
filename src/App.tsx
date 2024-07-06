@@ -20,6 +20,8 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
@@ -291,10 +293,17 @@ const Viewer = ({ file }: ViewerProps) => {
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
-            <ContextMenuItem onClick={prevPage}>Previous Page</ContextMenuItem>
-            <ContextMenuItem onClick={nextPage}>Next Page</ContextMenuItem>
             <ContextMenuItem onClick={printSelectedText}>
-              Print Selected Text
+              Contextualize Selection
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={nextPage}>
+              Next Page
+              <ContextMenuShortcut>k</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuItem onClick={prevPage}>
+              Previous Page
+              <ContextMenuShortcut>j</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
