@@ -150,7 +150,7 @@ type ViewerProps = {
 };
 
 const Viewer = ({ file }: ViewerProps) => {
-const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
+  const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -182,7 +182,7 @@ const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
     setNumPages(undefined);
     setSelectedText('');
     setScale(1);
-    setKey(prevKey => prevKey + 1); // Increment key to force re-render
+    setKey((prevKey) => prevKey + 1); // Increment key to force re-render
   }, [file]);
 
   useEffect(() => {
@@ -268,7 +268,7 @@ const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
     return items;
   };
 
-return (
+  return (
     <div className='flex h-[calc(100vh-200px)]'>
       <div className='mr-4 mt-2'>
         <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
@@ -352,7 +352,13 @@ const Navbar = () => {
   );
 };
 
-function CommandMenu({ onOpenFile, onOpenWorkspaces }: { onOpenFile: () => void; onOpenWorkspaces: () => void }) {
+function CommandMenu({
+  onOpenFile,
+  onOpenWorkspaces,
+}: {
+  onOpenFile: () => void;
+  onOpenWorkspaces: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -396,15 +402,19 @@ function CommandMenu({ onOpenFile, onOpenWorkspaces }: { onOpenFile: () => void;
   );
 }
 
+import { openDB, IDBPDatabase } from 'idb';
+import axios from 'axios';
+import { Progress } from './components/ui/progress';
+import { Input } from './components/ui/input';
+
 interface PDFHistory {
   name: string;
   lastOpened: string;
   size: number;
 }
 
-import { openDB, IDBPDatabase } from 'idb';
-
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
+const CHUNK_SIZE = 1000; // Number of characters per chunk
 
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -412,12 +422,25 @@ const App: React.FC = () => {
   const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
   const [db, setDb] = useState<IDBPDatabase | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [_indexingStatus, setIndexingStatus] = useState<string>('');
+  const [embeddings, setEmbeddings] = useState<number[][]>([]);
+  const [chunks, setChunks] = useState<string[]>([]);
+  const [indexingProgress, setIndexingProgress] = useState<number>(0);
+  const [isIndexing, setIsIndexing] = useState<boolean>(false);
+  const [question, setQuestion] = useState<string>('');
+  const [answer, setAnswer] = useState<string>('');
 
   useEffect(() => {
     const initDB = async () => {
-      const database = await openDB('PDFStorage', 1, {
-        upgrade(db) {
-          db.createObjectStore('pdfs');
+      const database = await openDB('PDFStorage', 2, {
+        upgrade(db, oldVersion, _newVersion, _transaction) {
+          if (oldVersion < 1) {
+            db.createObjectStore('pdfs');
+          }
+          if (oldVersion < 2) {
+            db.createObjectStore('chunks');
+            db.createObjectStore('embeddings');
+          }
         },
       });
       setDb(database);
@@ -453,9 +476,100 @@ const App: React.FC = () => {
     });
   };
 
-const openWorkspaces = useCallback(() => {
+  const extractTextFromPDF = async (
+    arrayBuffer: ArrayBuffer
+  ): Promise<string> => {
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item: any) => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
+    return fullText;
+  };
+
+  const chunkText = (text: string): string[] => {
+    const chunks = [];
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+      chunks.push(text.slice(i, i + CHUNK_SIZE));
+    }
+    return chunks;
+  };
+
+  const getEmbeddings = async (texts: string[]) => {
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/embeddings',
+        {
+          input: texts,
+          model: 'text-embedding-ada-002',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      return response.data.data.map((item: any) => item.embedding);
+    } catch (error) {
+      console.error('Error getting embeddings:', error);
+      return null;
+    }
+  };
+
+const indexPDF = async (pdfFile: File) => {
+    setIsIndexing(true);
+    setIndexingProgress(0);
+    setIndexingStatus('Extracting text from PDF...');
+    const arrayBuffer = await processPDF(pdfFile);
+    const text = await extractTextFromPDF(arrayBuffer);
+    setIndexingProgress(20);
+
+    setIndexingStatus('Chunking text...');
+    const textChunks = chunkText(text);
+    setChunks(textChunks);
+    setIndexingProgress(40);
+
+    setIndexingStatus('Generating embeddings...');
+    const embeddingsArray = await getEmbeddings(textChunks);
+    if (embeddingsArray) {
+      setEmbeddings(embeddingsArray);
+    }
+    setIndexingProgress(80);
+
+    // Save chunks and embeddings
+    if (db) {
+      await db.put('chunks', textChunks, pdfFile.name);
+      await db.put('embeddings', embeddingsArray, pdfFile.name);
+    }
+
+    setIndexingStatus('Indexing complete');
+    setIndexingProgress(100);
+    setIsIndexing(false);
+  };
+
+  const loadIndex = async (fileName: string) => {
+    if (db) {
+      const storedChunks = await db.get('chunks', fileName);
+      const storedEmbeddings = await db.get('embeddings', fileName);
+
+      if (storedChunks && storedEmbeddings) {
+        setChunks(storedChunks);
+        setEmbeddings(storedEmbeddings);
+        setIndexingStatus('Index loaded from storage');
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const openWorkspaces = useCallback(() => {
     setIsSheetOpen(true);
   }, []);
+
 
   const onFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -485,6 +599,12 @@ const openWorkspaces = useCallback(() => {
 
         setPdfHistory(newHistory);
         saveToLocalStorage(newHistory);
+
+        // Check if index exists, if not, create it
+        const indexLoaded = await loadIndex(selectedFile.name);
+        if (!indexLoaded) {
+          await indexPDF(selectedFile);
+        }
       } catch (error) {
         console.error('Error processing file:', error);
         toast('Failed to process the PDF file. Please try again.');
@@ -492,37 +612,131 @@ const openWorkspaces = useCallback(() => {
     }
   }, [db, pdfHistory, saveToLocalStorage]);
 
-  const openHistoryFile = useCallback(async (historyItem: PDFHistory) => {
-    if (db) {
-      try {
-        const arrayBuffer = await db.get('pdfs', historyItem.name);
-        if (arrayBuffer) {
-          const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          setFileUrl(url);
+  const openHistoryFile = useCallback(
+    async (historyItem: PDFHistory) => {
+      if (db) {
+        try {
+          const arrayBuffer = await db.get('pdfs', historyItem.name);
+          if (arrayBuffer) {
+            const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            setFileUrl(url);
 
-          const updatedHistory = pdfHistory.map((item) =>
-            item.name === historyItem.name
-              ? { ...item, lastOpened: new Date().toISOString() }
-              : item
-          );
-          setPdfHistory(updatedHistory);
-          saveToLocalStorage(updatedHistory);
-        } else {
-          toast(`File "${historyItem.name}" not found in storage. Please open it again.`);
+            const updatedHistory = pdfHistory.map((item) =>
+              item.name === historyItem.name
+                ? { ...item, lastOpened: new Date().toISOString() }
+                : item
+            );
+            setPdfHistory(updatedHistory);
+            saveToLocalStorage(updatedHistory);
+
+            // Load chunks and embeddings
+            await loadIndex(historyItem.name);
+          } else {
+            toast(
+              `File "${historyItem.name}" not found in storage. Please open it again.`
+            );
+          }
+        } catch (error) {
+          console.error('Error opening file from history:', error);
+          toast('Failed to open the PDF file. Please try again.');
         }
-      } catch (error) {
-        console.error('Error opening file from history:', error);
-        toast('Failed to open the PDF file. Please try again.');
       }
-    }
-  }, [db, pdfHistory, saveToLocalStorage]);
+    },
+    [db, pdfHistory, saveToLocalStorage]
+  );
 
-return (
-    <div className='m-2'>
+  const findMostRelevantChunks = async (question: string, topK: number = 3) => {
+    if (!embeddings.length) return [];
+
+    const questionEmbedding = await getEmbeddings([question]);
+    if (!questionEmbedding) return [];
+
+    const similarities = embeddings.map((emb, i) => ({
+      index: i,
+      similarity: cosineSimilarity(questionEmbedding[0], emb),
+    }));
+
+    similarities.sort((a, b) => b.similarity - a.similarity);
+    return similarities.slice(0, topK).map((item) => chunks[item.index]);
+  };
+
+  const cosineSimilarity = (vecA: number[], vecB: number[]) => {
+    const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+    const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+    const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+    return dotProduct / (magnitudeA * magnitudeB);
+  };
+
+  const answerQuestion = async () => {
+    if (!question) return;
+
+    const relevantChunks = await findMostRelevantChunks(question);
+    const context = relevantChunks.join(' ');
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a helpful assistant that answers questions based on the given context.',
+            },
+            {
+              role: 'user',
+              content: `Context: ${context}\n\nQuestion: ${question}\n\nAnswer:`,
+            },
+          ],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      setAnswer(response.data.choices[0].message.content);
+    } catch (error) {
+      console.error('Error getting answer:', error);
+      setAnswer(
+        'Sorry, I encountered an error while trying to answer your question.'
+      );
+    }
+  };
+
+  return (
+ <div className='m-2'>
       <Navbar />
-      <main className='m-8 flex-grow flex items-center'>
+      <main className='m-8 flex-grow flex flex-col items-center'>
         {fileUrl && <Viewer file={fileUrl} />}
+        {isIndexing && (
+          <div className='w-full max-w-md mt-4'>
+            <p>Indexing PDF: {Math.round(indexingProgress)}% complete</p>
+            <Progress value={indexingProgress} className="w-full" />
+          </div>
+        )}
+        <div className='mt-4 w-full max-w-md'>
+          <Input
+            type='text'
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder='Ask a question about the PDF'
+            className='w-full p-2 border rounded'
+          />
+          <Button variant='outline' onClick={answerQuestion} className='mt-2 w-full'>
+            Ask
+          </Button>
+          {answer && (
+            <div className='mt-4 p-4 rounded'>
+              <h3 className='font-bold'>Answer:</h3>
+              <p>{answer}</p>
+            </div>
+          )}
+        </div>
       </main>
       <CommandMenu
         onOpenFile={() => fileInputRef.current?.click()}
