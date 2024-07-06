@@ -3,6 +3,15 @@ import { pdfjs, Document, Page } from 'react-pdf';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
 import {
@@ -14,7 +23,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 
-import { File } from 'lucide-react';
+import { File as FileIcon, BookText } from 'lucide-react';
 
 import {
   ContextMenu,
@@ -41,6 +50,8 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
 } from '@/components/ui/navigation-menu';
+import { Button } from './components/ui/button';
+import { toast } from 'sonner';
 
 interface TOCItem {
   title: string;
@@ -142,14 +153,16 @@ type ViewerProps = {
 const Viewer = ({ file }: ViewerProps) => {
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
-  const [numPages, setNumPages] = useState<number>();
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [selectedText, setSelectedText] = useState<string>('');
+
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [numPages, setNumPages] = useState<number>();
+  const [selectedText, setSelectedText] = useState<string>('');
   const [scale, setScale] = useState<number>(1);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
+
     if (entry) {
       setContainerWidth(entry.contentRect.width);
     }
@@ -164,17 +177,13 @@ const Viewer = ({ file }: ViewerProps) => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'k') {
+      if (event.key === 'k')
         setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
-      } else if (event.key === 'j') {
+      else if (event.key === 'j')
         setCurrentPage((prev) => Math.max(prev - 1, 1));
-      } else if (event.key === '+') {
-        setScale((prev) => Math.min(prev + 0.1, 2)); // Increase scale, max 2x
-      } else if (event.key === '-') {
-        setScale((prev) => Math.max(prev - 0.1, 0.5)); // Decrease scale, min 0.5x
-      } else if (event.key === '0') {
-        setScale(1); // Reset to original size
-      }
+      else if (event.key === '+') setScale((prev) => Math.min(prev + 0.1, 2));
+      else if (event.key === '-') setScale((prev) => Math.max(prev - 0.1, 0.5));
+      else if (event.key === '0') setScale(1);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -358,8 +367,12 @@ function CommandMenu({ onOpenFile }: { onOpenFile: () => void }) {
               setOpen(false);
             }}
           >
-            <File className='mr-2 h-4 w-4' />
+            <FileIcon className='mr-2 h-4 w-4' />
             <span>Open</span>
+          </CommandItem>
+          <CommandItem>
+            <BookText className='mr-2 h-4 w-4' />
+            <span>Workspaces</span>
           </CommandItem>
         </CommandGroup>
       </CommandList>
@@ -367,24 +380,128 @@ function CommandMenu({ onOpenFile }: { onOpenFile: () => void }) {
   );
 }
 
-const App = () => {
+interface PDFHistory {
+  name: string;
+  lastOpened: string;
+  size: number;
+}
+
+import { openDB, IDBPDatabase } from 'idb';
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
+
+const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
+  const [db, setDb] = useState<IDBPDatabase | null>(null);
 
-  const [file, setFile] = useState<PDFFile | undefined>(undefined);
+  useEffect(() => {
+    const initDB = async () => {
+      const database = await openDB('PDFStorage', 1, {
+        upgrade(db) {
+          db.createObjectStore('pdfs');
+        },
+      });
+      setDb(database);
+    };
 
-  const onFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    const { files } = event.target;
-    const nextFile = files?.[0];
-    if (nextFile) {
-      setFile(nextFile);
+    initDB();
+  }, []);
+
+  useEffect(() => {
+    const storedHistory = localStorage.getItem('pdfHistory');
+    if (storedHistory) {
+      setPdfHistory(JSON.parse(storedHistory));
     }
+  }, []);
+
+  useEffect(() => {
+    // Cleanup function to revoke object URLs
+    return () => {
+      if (fileUrl) URL.revokeObjectURL(fileUrl);
+    };
+  }, [fileUrl]);
+
+  const saveToLocalStorage = useCallback((history: PDFHistory[]) => {
+    localStorage.setItem('pdfHistory', JSON.stringify(history));
+  }, []);
+
+  const processPDF = async (file: File): Promise<ArrayBuffer> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
   };
+
+  const onFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile && db) {
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast(`File is too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`);
+        return;
+      }
+
+      try {
+        const arrayBuffer = await processPDF(selectedFile);
+        const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        setFileUrl(url);
+
+        // Store PDF in IndexedDB
+        await db.put('pdfs', arrayBuffer, selectedFile.name);
+
+        const newHistory = [
+          {
+            name: selectedFile.name,
+            lastOpened: new Date().toISOString(),
+            size: selectedFile.size,
+          },
+          ...pdfHistory.filter((item) => item.name !== selectedFile.name),
+        ].slice(0, 10);
+
+        setPdfHistory(newHistory);
+        saveToLocalStorage(newHistory);
+      } catch (error) {
+        console.error('Error processing file:', error);
+        toast('Failed to process the PDF file. Please try again.');
+      }
+    }
+  }, [db, pdfHistory, saveToLocalStorage]);
+
+  const openHistoryFile = useCallback(async (historyItem: PDFHistory) => {
+    if (db) {
+      try {
+        const arrayBuffer = await db.get('pdfs', historyItem.name);
+        if (arrayBuffer) {
+          const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          setFileUrl(url);
+
+          const updatedHistory = pdfHistory.map((item) =>
+            item.name === historyItem.name
+              ? { ...item, lastOpened: new Date().toISOString() }
+              : item
+          );
+          setPdfHistory(updatedHistory);
+          saveToLocalStorage(updatedHistory);
+        } else {
+          toast(`File "${historyItem.name}" not found in storage. Please open it again.`);
+        }
+      } catch (error) {
+        console.error('Error opening file from history:', error);
+        toast('Failed to open the PDF file. Please try again.');
+      }
+    }
+  }, [db, pdfHistory, saveToLocalStorage]);
 
   return (
     <div className='m-2'>
       <Navbar />
       <main className='m-8 flex-grow flex items-center'>
-        {file && <Viewer file={file} />}
+        {fileUrl && <Viewer file={fileUrl} />}
       </main>
       <CommandMenu onOpenFile={() => fileInputRef.current?.click()} />
       <input
@@ -394,6 +511,36 @@ const App = () => {
         onChange={onFileChange}
         style={{ display: 'none' }}
       />
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button variant='outline' className='fixed bottom-4 right-4'>
+            Workspaces
+          </Button>
+        </SheetTrigger>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Workspaces</SheetTitle>
+            <SheetDescription>
+              Your recently opened PDFs. Click on one to open it again.
+            </SheetDescription>
+          </SheetHeader>
+          <ScrollArea className='h-[80vh] w-full mt-4'>
+            {pdfHistory.map((item, index) => (
+              <Button
+                key={index}
+                variant='ghost'
+                className='w-full justify-start mb-2'
+                onClick={() => openHistoryFile(item)}
+              >
+                {item.name}
+                <span className='ml-auto text-xs text-muted-foreground'>
+                  {new Date(item.lastOpened).toLocaleString()}
+                </span>
+              </Button>
+            ))}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };
