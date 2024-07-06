@@ -6,7 +6,6 @@ import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
-import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuContent,
