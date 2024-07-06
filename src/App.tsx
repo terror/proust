@@ -150,7 +150,7 @@ type ViewerProps = {
 };
 
 const Viewer = ({ file }: ViewerProps) => {
-  const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
+const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -158,10 +158,10 @@ const Viewer = ({ file }: ViewerProps) => {
   const [numPages, setNumPages] = useState<number>();
   const [selectedText, setSelectedText] = useState<string>('');
   const [scale, setScale] = useState<number>(1);
+  const [key, setKey] = useState<number>(0); // New state for forcing re-render
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
-
     if (entry) {
       setContainerWidth(entry.contentRect.width);
     }
@@ -172,7 +172,18 @@ const Viewer = ({ file }: ViewerProps) => {
   const onDocumentLoadSuccess = (pdf: PDFDocumentProxy): void => {
     setNumPages(pdf.numPages);
     setPdf(pdf);
+    setCurrentPage(1); // Reset to first page when new document is loaded
   };
+
+  useEffect(() => {
+    // Reset state when file changes
+    setPdf(null);
+    setCurrentPage(1);
+    setNumPages(undefined);
+    setSelectedText('');
+    setScale(1);
+    setKey(prevKey => prevKey + 1); // Increment key to force re-render
+  }, [file]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -257,7 +268,7 @@ const Viewer = ({ file }: ViewerProps) => {
     return items;
   };
 
-  return (
+return (
     <div className='flex h-[calc(100vh-200px)]'>
       <div className='mr-4 mt-2'>
         <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
@@ -272,6 +283,7 @@ const Viewer = ({ file }: ViewerProps) => {
               className='flex flex-col items-center'
             >
               <Document
+                key={key} // Add key prop here
                 file={file}
                 onLoadSuccess={onDocumentLoadSuccess}
                 options={options}
