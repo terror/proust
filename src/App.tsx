@@ -57,6 +57,7 @@ import { Command } from 'cmdk';
 import { IDBPDatabase, openDB } from 'idb';
 import 'katex/dist/katex.min.css';
 import { BookText, File as FileIcon, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -304,7 +305,7 @@ export const Editor: React.FC<EditorProps> = ({
           items: (query: string) => [
             {
               title: 'Ask Question',
-              command: ({ }: { editor: any }) => {
+              command: ({}: { editor: any }) => {
                 askQuestion(query).then((response) => {
                   setAiResponse(response);
                 });
@@ -360,8 +361,6 @@ export const Editor: React.FC<EditorProps> = ({
     </div>
   );
 };
-
-import { FileText, ChevronRight, ChevronLeft } from 'lucide-react';
 
 const Workspace = ({ file }: WorkspaceProps) => {
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
@@ -550,21 +549,21 @@ const Workspace = ({ file }: WorkspaceProps) => {
           </ContextMenuTrigger>
           <ContextMenuContent>
             <ContextMenuItem onClick={printSelectedText}>
-              <MessageSquare className="mr-2 h-4 w-4" />
+              <MessageSquare className='mr-2 h-4 w-4' />
               Ask
             </ContextMenuItem>
             <ContextMenuItem onClick={printSelectedText}>
-              <FileText className="mr-2 h-4 w-4" />
+              <FileText className='mr-2 h-4 w-4' />
               Summarize
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={nextPage}>
-              <ChevronRight className="mr-2 h-4 w-4" />
+              <ChevronRight className='mr-2 h-4 w-4' />
               Next Page
               <ContextMenuShortcut>k</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem onClick={prevPage}>
-              <ChevronLeft className="mr-2 h-4 w-4" />
+              <ChevronLeft className='mr-2 h-4 w-4' />
               Previous Page
               <ContextMenuShortcut>j</ContextMenuShortcut>
             </ContextMenuItem>
@@ -962,15 +961,19 @@ const App: React.FC = () => {
   return (
     <div className='m-2'>
       <Navbar />
-<main className='m-8'>
+      <main className='m-8'>
         {fileUrl ? (
           <Workspace file={fileUrl} />
         ) : (
-          <div className="flex h-[calc(100vh-200px)] items-center justify-center">
-            <div className="text-center">
-              <p className="text-2xl font-semibold mb-2">No workspace loaded</p>
-              <p className="text-muted-foreground">
-                Press <kbd className="px-2 py-1.5 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded-lg">⌘ K</kbd> to open command menu
+          <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
+            <div className='text-center'>
+              <p className='mb-2 text-2xl font-semibold'>No workspace loaded</p>
+              <p className='text-muted-foreground'>
+                Press{' '}
+                <kbd className='rounded-lg border border-gray-200 bg-gray-100 px-2 py-1.5 text-xs font-semibold text-gray-800'>
+                  ⌘ K
+                </kbd>{' '}
+                to open command menu
               </p>
             </div>
           </div>
