@@ -304,7 +304,7 @@ export const Editor: React.FC<EditorProps> = ({
           items: (query: string) => [
             {
               title: 'Ask Question',
-              command: ({}: { editor: any }) => {
+              command: ({ }: { editor: any }) => {
                 askQuestion(query).then((response) => {
                   setAiResponse(response);
                 });
@@ -361,6 +361,8 @@ export const Editor: React.FC<EditorProps> = ({
   );
 };
 
+import { FileText, ChevronRight, ChevronLeft } from 'lucide-react';
+
 const Workspace = ({ file }: WorkspaceProps) => {
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
@@ -372,6 +374,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
   const [scale, setScale] = useState<number>(1);
   const [content, setContent] = useState<string>('');
   const [key, setKey] = useState<number>(0); // New state for forcing re-render
+  const [loading, setLoading] = useState(true);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -386,10 +389,10 @@ const Workspace = ({ file }: WorkspaceProps) => {
     setNumPages(pdf.numPages);
     setPdf(pdf);
     setCurrentPage(1); // Reset to first page when new document is loaded
+    setLoading(false);
   };
 
   useEffect(() => {
-    // Reset state when file changes
     setPdf(null);
     setCurrentPage(1);
     setNumPages(undefined);
@@ -429,6 +432,15 @@ const Workspace = ({ file }: WorkspaceProps) => {
     if (selection) {
       setSelectedText(selection.toString());
     }
+  };
+
+  const onItemClick = async (item: { pageNumber: string | number }) => {
+    const pageNumber =
+      typeof item.pageNumber === 'string'
+        ? parseInt(item.pageNumber, 10)
+        : item.pageNumber;
+
+    setCurrentPage(pageNumber);
   };
 
   const printSelectedText = () => {
@@ -481,6 +493,10 @@ const Workspace = ({ file }: WorkspaceProps) => {
     return items;
   };
 
+  // if (loading) {
+  //   return <div>Loading...</div>
+  // }
+
   return (
     <ResizablePanelGroup
       className='h-[calc(100vh-120px)]'
@@ -505,6 +521,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
                 key={key} // Add key prop here
                 file={file}
                 onLoadSuccess={onDocumentLoadSuccess}
+                onItemClick={onItemClick} // Add this line
                 options={options}
               >
                 <Page
@@ -533,14 +550,21 @@ const Workspace = ({ file }: WorkspaceProps) => {
           </ContextMenuTrigger>
           <ContextMenuContent>
             <ContextMenuItem onClick={printSelectedText}>
-              Contextualize Selection
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Ask
+            </ContextMenuItem>
+            <ContextMenuItem onClick={printSelectedText}>
+              <FileText className="mr-2 h-4 w-4" />
+              Summarize
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={nextPage}>
+              <ChevronRight className="mr-2 h-4 w-4" />
               Next Page
               <ContextMenuShortcut>k</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem onClick={prevPage}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
               Previous Page
               <ContextMenuShortcut>j</ContextMenuShortcut>
             </ContextMenuItem>
@@ -938,7 +962,20 @@ const App: React.FC = () => {
   return (
     <div className='m-2'>
       <Navbar />
-      <main className='m-8'>{fileUrl && <Workspace file={fileUrl} />}</main>
+<main className='m-8'>
+        {fileUrl ? (
+          <Workspace file={fileUrl} />
+        ) : (
+          <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+            <div className="text-center">
+              <p className="text-2xl font-semibold mb-2">No workspace loaded</p>
+              <p className="text-muted-foreground">
+                Press <kbd className="px-2 py-1.5 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded-lg">⌘ K</kbd> to open command menu
+              </p>
+            </div>
+          </div>
+        )}
+      </main>
       <CommandMenu
         onOpenFile={() => fileInputRef.current?.click()}
         onOpenWorkspaces={openWorkspaces}
