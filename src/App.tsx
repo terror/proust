@@ -1,10 +1,20 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { pdfjs, Document, Page } from 'react-pdf';
-import { useCallback, useState, useEffect } from 'react';
-import { Upload } from 'lucide-react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+
+import { File } from 'lucide-react';
 
 import {
   ContextMenu,
@@ -258,7 +268,7 @@ const Viewer = ({ file }: ViewerProps) => {
               >
                 <Page
                   pageNumber={currentPage}
-width={
+                  width={
                     containerWidth
                       ? Math.min(containerWidth, maxWidth) * scale
                       : maxWidth * scale
@@ -299,8 +309,11 @@ const Navbar = () => {
       <NavigationMenu>
         <NavigationMenuList>
           <NavigationMenuItem>
-            <NavigationMenuLink className='text-xl font-bold'>
-              proust <p className='italic text-sm'>a learning tool</p>
+            <NavigationMenuLink className='text-xl font-semibold'>
+              proust{' '}
+              <p className='italic text-sm text-muted-foreground'>
+                a learning tool
+              </p>
             </NavigationMenuLink>
           </NavigationMenuItem>
         </NavigationMenuList>
@@ -309,31 +322,45 @@ const Navbar = () => {
     </div>
   );
 };
-interface FileInputProps {
-  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+
+function CommandMenu({ onOpenFile }: { onOpenFile: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setOpen((open) => !open);
+      }
+    };
+    document.addEventListener('keydown', down);
+    return () => document.removeEventListener('keydown', down);
+  }, []);
+
+  return (
+    <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandInput placeholder='Type a command or search...' />
+      <CommandList>
+        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandGroup heading='Suggestions'>
+          <CommandItem
+            onSelect={() => {
+              onOpenFile();
+              setOpen(false);
+            }}
+          >
+            <File className='mr-2 h-4 w-4' />
+            <span>Open</span>
+          </CommandItem>
+        </CommandGroup>
+      </CommandList>
+    </CommandDialog>
+  );
 }
 
-const FileInput: React.FC<FileInputProps> = ({ onFileChange }) => {
-  return (
-    <div className='flex flex-col items-center justify-center h-full'>
-      <label htmlFor='file-upload' className='cursor-pointer'>
-        <div className='flex flex-col items-center space-y-2'>
-          <Upload className='w-12 h-12 text-gray-400' />
-          <span className='text-sm font-medium text-gray-600'>Upload PDF</span>
-        </div>
-      </label>
-      <input
-        id='file-upload'
-        type='file'
-        accept='.pdf'
-        onChange={onFileChange}
-        className='hidden'
-      />
-    </div>
-  );
-};
-
 const App = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [file, setFile] = useState<PDFFile | undefined>(undefined);
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -348,9 +375,16 @@ const App = () => {
     <div className='m-2'>
       <Navbar />
       <main className='m-8 flex-grow flex items-center'>
-        {!file && <FileInput onFileChange={onFileChange} />}
         {file && <Viewer file={file} />}
       </main>
+      <CommandMenu onOpenFile={() => fileInputRef.current?.click()} />
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='.pdf'
+        onChange={onFileChange}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 };
