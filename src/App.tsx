@@ -1,17 +1,18 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { pdfjs, Document, Page } from 'react-pdf';
 import { useCallback, useState, useEffect } from 'react';
+import { Upload } from 'lucide-react';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-import { Label } from './components/ui/label';
-import { Input } from './components/ui/input';
+
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+} from '@/components/ui/context-menu';
 import {
   Pagination,
   PaginationContent,
@@ -20,7 +21,15 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination"
+} from '@/components/ui/pagination';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ModeToggle } from './components/mode-toggle';
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+} from '@/components/ui/navigation-menu';
 
 interface TOCItem {
   title: string;
@@ -36,7 +45,7 @@ interface TOCProps {
 const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
   const [outline, setOutline] = useState<TOCItem[]>([]);
 
-useEffect(() => {
+  useEffect(() => {
     const fetchOutline = async () => {
       if (pdf) {
         const outline = await pdf.getOutline();
@@ -52,7 +61,9 @@ useEffect(() => {
                 return {
                   title: item.title,
                   pageNumber,
-                  items: item.items ? await processOutline(item.items) : undefined,
+                  items: item.items
+                    ? await processOutline(item.items)
+                    : undefined,
                 };
               })
             );
@@ -72,9 +83,9 @@ useEffect(() => {
     return (
       <ul className={`pl-${depth * 4}`}>
         {items.map((item, index) => (
-          <li key={index} className="my-1">
+          <li key={index} className='my-1'>
             <button
-              className="text-left hover:underline focus:outline-none"
+              className='text-left hover:underline focus:outline-none'
               onClick={() => onItemClick(item.pageNumber)}
             >
               {item.title}
@@ -87,14 +98,14 @@ useEffect(() => {
   };
 
   return (
-    <div className="max-h-96 overflow-y-auto p-4 bg-white shadow-md rounded-md">
-      <h2 className="text-lg font-semibold mb-2">Table of Contents</h2>
+    <ScrollArea className='h-[calc(100vh-200px)] w-64 p-4'>
+      <h2 className='text-lg font-semibold mb-2'>Table of Contents</h2>
       {outline.length > 0 ? (
         renderTOCItems(outline)
       ) : (
         <p>No table of contents available</p>
       )}
-    </div>
+    </ScrollArea>
   );
 };
 
@@ -124,6 +135,7 @@ const Viewer = ({ file }: ViewerProps) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [selectedText, setSelectedText] = useState<string>('');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [scale, setScale] = useState<number>(1);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -141,10 +153,16 @@ const Viewer = ({ file }: ViewerProps) => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'j') {
+      if (event.key === 'k') {
         setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
-      } else if (event.key === 'k') {
+      } else if (event.key === 'j') {
         setCurrentPage((prev) => Math.max(prev - 1, 1));
+      } else if (event.key === '+') {
+        setScale((prev) => Math.min(prev + 0.1, 2)); // Increase scale, max 2x
+      } else if (event.key === '-') {
+        setScale((prev) => Math.max(prev - 0.1, 0.5)); // Decrease scale, min 0.5x
+      } else if (event.key === '0') {
+        setScale(1); // Reset to original size
       }
     };
 
@@ -174,7 +192,7 @@ const Viewer = ({ file }: ViewerProps) => {
     console.log('Selected Text:', selectedText);
   };
 
-const renderPaginationItems = () => {
+  const renderPaginationItems = () => {
     if (!numPages) return null;
 
     const items = [];
@@ -190,7 +208,7 @@ const renderPaginationItems = () => {
 
     if (start > 1) {
       items.push(
-        <PaginationItem key="ellipsis-start">
+        <PaginationItem key='ellipsis-start'>
           <PaginationEllipsis />
         </PaginationItem>
       );
@@ -211,7 +229,7 @@ const renderPaginationItems = () => {
 
     if (end < numPages) {
       items.push(
-        <PaginationItem key="ellipsis-end">
+        <PaginationItem key='ellipsis-end'>
           <PaginationEllipsis />
         </PaginationItem>
       );
@@ -221,17 +239,18 @@ const renderPaginationItems = () => {
   };
 
   return (
-    <div className="flex">
-      <div className="w-1/4 mr-4">
+    <div className='flex h-[calc(100vh-200px)]'>
+      <div className='mr-4 mt-2'>
         <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
       </div>
-      <div className="w-3/4">
+      <div className='mt-2'>
         <ContextMenu>
           <ContextMenuTrigger>
             <div
               ref={setContainerRef}
               onMouseUp={handleTextSelection}
               onTouchEnd={handleTextSelection}
+              className='flex flex-col items-center'
             >
               <Document
                 file={file}
@@ -240,13 +259,15 @@ const renderPaginationItems = () => {
               >
                 <Page
                   pageNumber={currentPage}
-                  width={
-                    containerWidth ? Math.min(containerWidth, maxWidth) : maxWidth
+width={
+                    containerWidth
+                      ? Math.min(containerWidth, maxWidth) * scale
+                      : maxWidth * scale
                   }
                 />
               </Document>
               {numPages && (
-                <Pagination>
+                <Pagination className='mt-4 mb-4'>
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious onClick={prevPage} />
@@ -263,10 +284,52 @@ const renderPaginationItems = () => {
           <ContextMenuContent>
             <ContextMenuItem onClick={prevPage}>Previous Page</ContextMenuItem>
             <ContextMenuItem onClick={nextPage}>Next Page</ContextMenuItem>
-            <ContextMenuItem onClick={printSelectedText}>Print Selected Text</ContextMenuItem>
+            <ContextMenuItem onClick={printSelectedText}>
+              Print Selected Text
+            </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
       </div>
+    </div>
+  );
+};
+
+const Navbar = () => {
+  return (
+    <div className='flex justify-between items-center p-4'>
+      <NavigationMenu>
+        <NavigationMenuList>
+          <NavigationMenuItem>
+            <NavigationMenuLink className='text-xl font-bold'>
+              proust <p className='italic text-sm'>a learning tool</p>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        </NavigationMenuList>
+      </NavigationMenu>
+      <ModeToggle />
+    </div>
+  );
+};
+interface FileInputProps {
+  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+const FileInput: React.FC<FileInputProps> = ({ onFileChange }) => {
+  return (
+    <div className='flex flex-col items-center justify-center h-full'>
+      <label htmlFor='file-upload' className='cursor-pointer'>
+        <div className='flex flex-col items-center space-y-2'>
+          <Upload className='w-12 h-12 text-gray-400' />
+          <span className='text-sm font-medium text-gray-600'>Upload PDF</span>
+        </div>
+      </label>
+      <input
+        id='file-upload'
+        type='file'
+        accept='.pdf'
+        onChange={onFileChange}
+        className='hidden'
+      />
     </div>
   );
 };
@@ -284,12 +347,11 @@ const App = () => {
 
   return (
     <div className='m-2'>
-      <p>proust</p>
-      <div className="grid w-full max-w-sm items-center gap-1.5">
-        <Label htmlFor="file">Open</Label>
-        <Input onChange={onFileChange} accept='.pdf' id="file" type="file" />
-      </div>
-      {file && <Viewer file={file} />}
+      <Navbar />
+      <main className='m-8 flex-grow flex items-center'>
+        {!file && <FileInput onFileChange={onFileChange} />}
+        {file && <Viewer file={file} />}
+      </main>
     </div>
   );
 };
