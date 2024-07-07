@@ -16,12 +16,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-} from '@/components/ui/navigation-menu';
-import {
   Pagination,
   PaginationContent,
   PaginationEllipsis,
@@ -56,7 +50,12 @@ import { Command } from 'cmdk';
 import { IDBPDatabase } from 'idb';
 import 'katex/dist/katex.min.css';
 import { BookText, File as FileIcon, MessageSquare } from 'lucide-react';
-import { ChevronLeft, ChevronRight, FileText, TextSelection } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  TextSelection,
+} from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -66,6 +65,7 @@ import { toast } from 'sonner';
 import tippy from 'tippy.js';
 
 import { ModeToggle } from './components/mode-toggle';
+import { Navbar } from './components/navbar';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
 
@@ -301,23 +301,17 @@ export const Editor: React.FC<EditorProps> = ({
         suggestion: {
           items: (query: string) => [
             {
-              title: 'Ask Question',
+              title: 'Ask a question',
               command: ({}: { editor: any }) => {
                 askQuestion(query).then((response) => {
                   setAiResponse(response);
                 });
               },
             },
-            {
-              title: 'Insert LaTeX',
-              command: ({ editor }: { editor: any }) => {
-                editor.commands.insertContent('$$\\LaTeX$$');
-              },
-            },
           ],
         },
       }),
-      MathExtension.configure({ evaluation: true }),
+      MathExtension.configure({ evaluation: false }),
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -427,9 +421,11 @@ const Workspace = ({ file }: WorkspaceProps) => {
   };
 
   const onItemClick = async (item: { pageNumber: string | number }) => {
-    setCurrentPage(typeof item.pageNumber === 'string'
+    setCurrentPage(
+      typeof item.pageNumber === 'string'
         ? parseInt(item.pageNumber, 10)
-        : item.pageNumber);
+        : item.pageNumber
+    );
   };
 
   const printSelectedText = () => {
@@ -570,26 +566,6 @@ const Workspace = ({ file }: WorkspaceProps) => {
         />
       </ResizablePanel>
     </ResizablePanelGroup>
-  );
-};
-
-const Navbar = () => {
-  return (
-    <div className='flex items-center justify-between p-4'>
-      <NavigationMenu>
-        <NavigationMenuList>
-          <NavigationMenuItem>
-            <NavigationMenuLink className='text-xl font-semibold'>
-              proust{' '}
-              <p className='text-sm italic text-muted-foreground'>
-                a learning tool
-              </p>
-            </NavigationMenuLink>
-          </NavigationMenuItem>
-        </NavigationMenuList>
-      </NavigationMenu>
-      <ModeToggle />
-    </div>
   );
 };
 
