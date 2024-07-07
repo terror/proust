@@ -59,8 +59,8 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { toast } from 'sonner';
 import tippy from 'tippy.js';
 
-import { Content } from './components/content';
 import { Navbar } from './components/navbar';
+import { Outline } from './components/outline';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
 import { OutlineItem, parseOutline } from './lib/pdf';
@@ -404,7 +404,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
         >
           <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
             <div className='h-full overflow-hidden'>
-              <Content outline={outline} onItemClick={setCurrentPage} />
+              <Outline outline={outline} onItemClick={setCurrentPage} />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />

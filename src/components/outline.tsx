@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { OutlineItem } from './pdf';
+import { OutlineItem } from '../lib/pdf';
 import { ScrollArea } from './ui/scroll-area';
 
 const OutlineList: React.FC<{
@@ -29,12 +29,12 @@ const OutlineList: React.FC<{
   </ul>
 );
 
-interface ContentProps {
+interface OutlineProps {
   outline: OutlineItem[];
   onItemClick: (pageNumber: number) => void;
 }
 
-export const Content: React.FC<ContentProps> = ({ outline, onItemClick }) => {
+export const Outline: React.FC<OutlineProps> = ({ outline, onItemClick }) => {
   return (
     <ScrollArea className='h-[900px]'>
       <div className='p-4'>
