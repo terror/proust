@@ -1,12 +1,3 @@
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { IDBPDatabase } from 'idb';
 import 'katex/dist/katex.min.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,6 +9,7 @@ import { toast } from 'sonner';
 import { CommandMenu } from './components/command-menu';
 import { Navbar } from './components/navbar';
 import { Workspace } from './components/workspace';
+import { WorkspacesPane } from './components/workspaces-pane';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
 
@@ -26,12 +18,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-interface PDFHistory {
+export type Workspace = {
   name: string;
   lastOpened: string;
   size: number;
   notes: string;
-}
+};
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 const CHUNK_SIZE = 1000; // Number of characters per chunk
@@ -39,15 +31,13 @@ const CHUNK_SIZE = 1000; // Number of characters per chunk
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [_answer, setAnswer] = useState<string>('');
   const [chunks, setChunks] = useState<string[]>([]);
   const [db, setDb] = useState<IDBPDatabase | undefined>(undefined);
   const [embeddings, setEmbeddings] = useState<number[][]>([]);
   const [fileUrl, setFileUrl] = useState<string | undefined>(undefined);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [notes, _setNotes] = useState<string>('');
-  const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
-  const [question, _setQuestion] = useState<string>('');
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspacesPaneOpen, setWorkspacesPaneOpen] = useState(false);
 
   useEffect(() => {
     database.open().then((database: IDBPDatabase) => setDb(database));
@@ -56,23 +46,20 @@ const App: React.FC = () => {
   useEffect(() => {
     const storedHistory = localStorage.getItem('pdfHistory');
 
-    if (storedHistory) {
-      setPdfHistory(JSON.parse(storedHistory));
-    }
+    if (storedHistory) setWorkspaces(JSON.parse(storedHistory));
   }, []);
 
   useEffect(() => {
-    // Cleanup function to revoke object URLs
     return () => {
       if (fileUrl) URL.revokeObjectURL(fileUrl);
     };
   }, [fileUrl]);
 
-  const saveToLocalStorage = useCallback((history: PDFHistory[]) => {
+  const saveToLocalStorage = useCallback((history: Workspace[]) => {
     localStorage.setItem('pdfHistory', JSON.stringify(history));
   }, []);
 
-  const processPDF = async (file: File): Promise<ArrayBuffer> => {
+  const process = async (file: File): Promise<ArrayBuffer> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as ArrayBuffer);
@@ -81,12 +68,7 @@ const App: React.FC = () => {
     });
   };
 
-  /*
-   * Extract text from PDF using pdf.js.
-   */
-  const extractTextFromPDF = async (
-    arrayBuffer: ArrayBuffer
-  ): Promise<string> => {
+  const extractText = async (arrayBuffer: ArrayBuffer): Promise<string> => {
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
 
     let fullText = '';
@@ -112,8 +94,8 @@ const App: React.FC = () => {
   const index = async (pdfFile: File) => {
     const time = performance.now();
 
-    const arrayBuffer = await processPDF(pdfFile);
-    const text = await extractTextFromPDF(arrayBuffer);
+    const arrayBuffer = await process(pdfFile);
+    const text = await extractText(arrayBuffer);
 
     const textChunks = chunkText(text);
     setChunks(textChunks);
@@ -132,7 +114,7 @@ const App: React.FC = () => {
     toast.success(`Indexed ${pdfFile.name} in ${Math.round(elapsed / 1000)}s`);
   };
 
-  const load = async (fileName: string) => {
+  const loadIndex = async (fileName: string) => {
     if (db) {
       const storedChunks = await db.get('chunks', fileName);
       const storedEmbeddings = await db.get('embeddings', fileName);
@@ -147,92 +129,95 @@ const App: React.FC = () => {
     return false;
   };
 
-  const openWorkspaces = useCallback(() => {
-    setIsSheetOpen(true);
-  }, []);
-
   const onFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFile = event.target.files?.[0];
-      if (selectedFile && db) {
-        if (selectedFile.size > MAX_FILE_SIZE) {
-          toast(
-            `File is too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`
-          );
+
+      if (!selectedFile) {
+        toast.error('No file selected');
+        return;
+      }
+
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error(`Maximum file size is ${MAX_FILE_SIZE / 1024 / 1024} MB`);
+        return;
+      }
+
+      if (!db) {
+        toast.error('Database not initialized');
+        return;
+      }
+
+      try {
+        const arrayBuffer = await process(selectedFile);
+
+        setFileUrl(
+          URL.createObjectURL(
+            new Blob([arrayBuffer], { type: 'application/pdf' })
+          )
+        );
+
+        await db.put('pdfs', arrayBuffer, selectedFile.name);
+
+        const newHistory = [
+          {
+            name: selectedFile.name,
+            lastOpened: new Date().toISOString(),
+            size: selectedFile.size,
+            notes,
+          },
+          ...workspaces.filter((item) => item.name !== selectedFile.name),
+        ].slice(0, 10);
+
+        setWorkspaces(newHistory);
+        saveToLocalStorage(newHistory);
+
+        const indexLoaded = await loadIndex(selectedFile.name);
+
+        if (!indexLoaded) await index(selectedFile);
+      } catch (error) {
+        toast.error(`Failed to open file: \`${error}\``);
+      }
+    },
+    [db, workspaces, saveToLocalStorage]
+  );
+
+  const openWorkspace = useCallback(
+    async (workspace: Workspace) => {
+      console.debug('Opening workspace:', workspace.name);
+
+      if (!db) {
+        toast.error('Database not initialized');
+        return;
+      }
+
+      try {
+        const content = await db.get('pdfs', workspace.name);
+
+        if (!content) {
+          toast.error(`Workspace "${workspace.name}" not found in database`);
           return;
         }
 
-        try {
-          const arrayBuffer = await processPDF(selectedFile);
-          const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          setFileUrl(url);
+        setFileUrl(
+          URL.createObjectURL(new Blob([content], { type: 'application/pdf' }))
+        );
 
-          // Store PDF in IndexedDB
-          await db.put('pdfs', arrayBuffer, selectedFile.name);
+        const updatedHistory = workspaces.map((item) =>
+          item.name === workspace.name
+            ? { ...item, lastOpened: new Date().toISOString() }
+            : item
+        );
 
-          const newHistory = [
-            {
-              name: selectedFile.name,
-              lastOpened: new Date().toISOString(),
-              size: selectedFile.size,
-              notes,
-            },
-            ...pdfHistory.filter((item) => item.name !== selectedFile.name),
-          ].slice(0, 10);
+        setWorkspaces(updatedHistory);
+        saveToLocalStorage(updatedHistory);
 
-          setPdfHistory(newHistory);
-          saveToLocalStorage(newHistory);
-
-          // Check if index exists, if not, create it
-          const indexLoaded = await load(selectedFile.name);
-          if (!indexLoaded) {
-            await index(selectedFile);
-          }
-        } catch (error) {
-          console.error('Error processing file:', error);
-          toast('Failed to process the PDF file. Please try again.');
-        }
+        await loadIndex(workspace.name);
+      } catch (error) {
+        toast.error('Failed to open workspace');
       }
     },
-    [db, pdfHistory, saveToLocalStorage]
-  );
-
-  const openHistoryFile = useCallback(
-    async (historyItem: PDFHistory) => {
-      if (db) {
-        try {
-          const arrayBuffer = await db.get('pdfs', historyItem.name);
-
-          if (arrayBuffer) {
-            setFileUrl(
-              URL.createObjectURL(
-                new Blob([arrayBuffer], { type: 'application/pdf' })
-              )
-            );
-
-            const updatedHistory = pdfHistory.map((item) =>
-              item.name === historyItem.name
-                ? { ...item, lastOpened: new Date().toISOString() }
-                : item
-            );
-
-            setPdfHistory(updatedHistory);
-            saveToLocalStorage(updatedHistory);
-
-            await load(historyItem.name);
-          } else {
-            toast(
-              `File "${historyItem.name}" not found in storage. Please open it again.`
-            );
-          }
-        } catch (error) {
-          console.error('Error opening file from history:', error);
-          toast('Failed to open the PDF file. Please try again.');
-        }
-      }
-    },
-    [db, pdfHistory, saveToLocalStorage]
+    [db, workspaces, saveToLocalStorage]
   );
 
   const findMostRelevantChunks = async (question: string, topK: number = 3) => {
@@ -258,30 +243,32 @@ const App: React.FC = () => {
     return dotProduct / (magnitudeA * magnitudeB);
   };
 
+  const defaultState = () => {
+    return (
+      <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
+        <div className='text-center'>
+          <p className='mb-2 text-2xl font-semibold'>No workspace loaded</p>
+          <p className='text-muted-foreground'>
+            Press{' '}
+            <kbd className='rounded-lg border border-gray-200 bg-gray-100 px-2 py-1.5 text-xs font-semibold text-gray-800'>
+              ⌘ K
+            </kbd>{' '}
+            to open the command menu
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className='m-2'>
       <Navbar />
       <main className='m-8'>
-        {fileUrl ? (
-          <Workspace file={fileUrl} />
-        ) : (
-          <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
-            <div className='text-center'>
-              <p className='mb-2 text-2xl font-semibold'>No workspace loaded</p>
-              <p className='text-muted-foreground'>
-                Press{' '}
-                <kbd className='rounded-lg border border-gray-200 bg-gray-100 px-2 py-1.5 text-xs font-semibold text-gray-800'>
-                  ⌘ K
-                </kbd>{' '}
-                to open the command menu
-              </p>
-            </div>
-          </div>
-        )}
+        {fileUrl ? <Workspace file={fileUrl} /> : defaultState()}
       </main>
       <CommandMenu
         onOpenFile={() => fileInputRef.current?.click()}
-        onOpenWorkspaces={openWorkspaces}
+        onOpenWorkspaces={() => setWorkspacesPaneOpen(true)}
       />
       <input
         ref={fileInputRef}
@@ -290,31 +277,12 @@ const App: React.FC = () => {
         onChange={onFileChange}
         style={{ display: 'none' }}
       />
-      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>Workspaces</SheetTitle>
-            <SheetDescription>
-              Your recently opened PDFs. Click on one to open it again.
-            </SheetDescription>
-          </SheetHeader>
-          <ScrollArea className='mt-4 h-[80vh] w-full'>
-            {pdfHistory.map((item, index) => (
-              <Button
-                key={index}
-                variant='ghost'
-                className='mb-2 w-full justify-start'
-                onClick={() => openHistoryFile(item)}
-              >
-                {item.name}
-                <span className='ml-auto text-xs text-muted-foreground'>
-                  {new Date(item.lastOpened).toLocaleString()}
-                </span>
-              </Button>
-            ))}
-          </ScrollArea>
-        </SheetContent>
-      </Sheet>
+      <WorkspacesPane
+        isOpen={workspacesPaneOpen}
+        setIsOpen={setWorkspacesPaneOpen}
+        onOpenWorkspace={openWorkspace}
+        workspaces={workspaces}
+      />
     </div>
   );
 };
