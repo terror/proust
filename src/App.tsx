@@ -64,7 +64,6 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { toast } from 'sonner';
 import tippy from 'tippy.js';
 
-import { ModeToggle } from './components/mode-toggle';
 import { Navbar } from './components/navbar';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
