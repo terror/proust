@@ -52,12 +52,11 @@ import { ReactRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Suggestion from '@tiptap/suggestion';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
-import axios from 'axios';
 import { Command } from 'cmdk';
-import { IDBPDatabase, openDB } from 'idb';
+import { IDBPDatabase } from 'idb';
 import 'katex/dist/katex.min.css';
 import { BookText, File as FileIcon, MessageSquare } from 'lucide-react';
-import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, TextSelection } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -67,56 +66,59 @@ import { toast } from 'sonner';
 import tippy from 'tippy.js';
 
 import { ModeToggle } from './components/mode-toggle';
+import * as ai from './lib/ai';
+import * as database from './lib/database';
 
-interface TOCItem {
+interface ContentItem {
   title: string;
   pageNumber: number;
-  items?: TOCItem[];
+  items?: ContentItem[];
 }
 
-interface TOCProps {
+interface ContentProps {
   pdf: PDFDocumentProxy | null;
   onItemClick: (pageNumber: number) => void;
 }
 
-const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
-  const [outline, setOutline] = useState<TOCItem[]>([]);
+const Content: React.FC<ContentProps> = ({ pdf, onItemClick }) => {
+  const [outline, setOutline] = useState<ContentItem[]>([]);
 
   useEffect(() => {
     const fetchOutline = async () => {
-      if (pdf) {
-        const outline = await pdf.getOutline();
-        if (outline) {
-          const processOutline = async (items: any[]): Promise<TOCItem[]> => {
-            const processedItems = await Promise.all(
-              items.map(async (item) => {
-                let pageNumber = 1;
-                if (item.dest) {
-                  const pageIndex = await pdf.getPageIndex(item.dest[0]);
-                  pageNumber = pageIndex + 1;
-                }
-                return {
-                  title: item.title,
-                  pageNumber,
-                  items: item.items
-                    ? await processOutline(item.items)
-                    : undefined,
-                };
-              })
-            );
-            return processedItems;
-          };
+      if (!pdf) return;
 
-          const processedOutline = await processOutline(outline);
-          setOutline(processedOutline);
-        }
-      }
+      const outline = await pdf.getOutline();
+
+      if (!outline) return;
+
+      const processOutline = async (items: any[]): Promise<ContentItem[]> => {
+        const processedItems = await Promise.all(
+          items.map(async (item) => {
+            let pageNumber = 1;
+
+            if (item.dest) {
+              const pageIndex = await pdf.getPageIndex(item.dest[0]);
+              pageNumber = pageIndex + 1;
+            }
+
+            return {
+              title: item.title,
+              pageNumber,
+              items: item.items ? await processOutline(item.items) : undefined,
+            };
+          })
+        );
+
+        return processedItems;
+      };
+
+      setOutline(await processOutline(outline));
     };
 
     fetchOutline();
   }, [pdf]);
 
-  const renderTOCItems = (items: TOCItem[], depth = 0) => {
+  const render = (items: ContentItem[], depth = 0) => {
     return (
       <ul className={`pl-${depth * 4}`}>
         {items.map((item, index) => (
@@ -127,22 +129,20 @@ const TableOfContents: React.FC<TOCProps> = ({ pdf, onItemClick }) => {
             >
               {item.title}
             </button>
-            {item.items && renderTOCItems(item.items, depth + 1)}
+            {item.items && render(item.items, depth + 1)}
           </li>
         ))}
       </ul>
     );
   };
 
+  if (outline.length === 0) return null;
+
   return (
     <ScrollArea className='h-[900px]'>
       <div className='p-4'>
         <h2 className='mb-2 text-lg font-semibold'>Table of Contents</h2>
-        {outline.length > 0 ? (
-          renderTOCItems(outline)
-        ) : (
-          <p>No table of contents available</p>
-        )}
+        {render(outline)}
       </div>
     </ScrollArea>
   );
@@ -266,10 +266,7 @@ export const EditorCommandList: React.FC<EditorCommandListProps> = ({
 );
 
 const askQuestion = async (query: string) => {
-  // Implement your question-answering logic here
-  // This could involve calling an API or using the existing answerQuestion function
   console.log('Asking question:', query);
-  // For now, we'll just return a placeholder response
   return 'This is a placeholder response to your question: ' + query;
 };
 
@@ -373,13 +370,10 @@ const Workspace = ({ file }: WorkspaceProps) => {
   const [scale, setScale] = useState<number>(1);
   const [content, setContent] = useState<string>('');
   const [key, setKey] = useState<number>(0); // New state for forcing re-render
-  const [loading, setLoading] = useState(true);
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
-    if (entry) {
-      setContainerWidth(entry.contentRect.width);
-    }
+    if (entry) setContainerWidth(entry.contentRect.width);
   }, []);
 
   useResizeObserver(containerRef, resizeObserverOptions, onResize);
@@ -387,8 +381,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
   const onDocumentLoadSuccess = (pdf: PDFDocumentProxy): void => {
     setNumPages(pdf.numPages);
     setPdf(pdf);
-    setCurrentPage(1); // Reset to first page when new document is loaded
-    setLoading(false);
+    setCurrentPage(1);
   };
 
   useEffect(() => {
@@ -397,7 +390,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
     setNumPages(undefined);
     setSelectedText('');
     setScale(1);
-    setKey((prevKey) => prevKey + 1); // Increment key to force re-render
+    setKey((prevKey) => prevKey + 1);
   }, [file]);
 
   useEffect(() => {
@@ -434,12 +427,9 @@ const Workspace = ({ file }: WorkspaceProps) => {
   };
 
   const onItemClick = async (item: { pageNumber: string | number }) => {
-    const pageNumber =
-      typeof item.pageNumber === 'string'
+    setCurrentPage(typeof item.pageNumber === 'string'
         ? parseInt(item.pageNumber, 10)
-        : item.pageNumber;
-
-    setCurrentPage(pageNumber);
+        : item.pageNumber);
   };
 
   const printSelectedText = () => {
@@ -492,10 +482,6 @@ const Workspace = ({ file }: WorkspaceProps) => {
     return items;
   };
 
-  // if (loading) {
-  //   return <div>Loading...</div>
-  // }
-
   return (
     <ResizablePanelGroup
       className='h-[calc(100vh-120px)]'
@@ -503,7 +489,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
     >
       <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
         <div className='h-full overflow-hidden'>
-          <TableOfContents pdf={pdf} onItemClick={setCurrentPage} />
+          <Content pdf={pdf} onItemClick={setCurrentPage} />
         </div>
       </ResizablePanel>
       <ResizableHandle withHandle />
@@ -533,7 +519,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
                 />
               </Document>
               {numPages && (
-                <Pagination className='mb-4 mt-4'>
+                <Pagination className='mb-4 mt-4 cursor-pointer'>
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious onClick={prevPage} />
@@ -550,21 +536,25 @@ const Workspace = ({ file }: WorkspaceProps) => {
           <ContextMenuContent>
             <ContextMenuItem onClick={printSelectedText}>
               <MessageSquare className='mr-2 h-4 w-4' />
-              Ask
+              Ask a question
+            </ContextMenuItem>
+            <ContextMenuItem onClick={printSelectedText}>
+              <TextSelection className='mr-2 h-4 w-4' />
+              Summarize selection
             </ContextMenuItem>
             <ContextMenuItem onClick={printSelectedText}>
               <FileText className='mr-2 h-4 w-4' />
-              Summarize
+              Summarize page
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={nextPage}>
               <ChevronRight className='mr-2 h-4 w-4' />
-              Next Page
+              Next page
               <ContextMenuShortcut>k</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem onClick={prevPage}>
               <ChevronLeft className='mr-2 h-4 w-4' />
-              Previous Page
+              Previous page
               <ContextMenuShortcut>j</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuContent>
@@ -665,37 +655,24 @@ const CHUNK_SIZE = 1000; // Number of characters per chunk
 
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
-  const [db, setDb] = useState<IDBPDatabase | null>(null);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [embeddings, setEmbeddings] = useState<number[][]>([]);
-  const [chunks, setChunks] = useState<string[]>([]);
-  const [question, _setQuestion] = useState<string>('');
+
   const [_answer, setAnswer] = useState<string>('');
+  const [chunks, setChunks] = useState<string[]>([]);
+  const [db, setDb] = useState<IDBPDatabase | undefined>(undefined);
+  const [embeddings, setEmbeddings] = useState<number[][]>([]);
+  const [fileUrl, setFileUrl] = useState<string | undefined>(undefined);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [notes, _setNotes] = useState<string>('');
+  const [pdfHistory, setPdfHistory] = useState<PDFHistory[]>([]);
+  const [question, _setQuestion] = useState<string>('');
 
   useEffect(() => {
-    const initDB = async () => {
-      const database = await openDB('PDFStorage', 2, {
-        upgrade(db, oldVersion, _newVersion, _transaction) {
-          if (oldVersion < 1) {
-            db.createObjectStore('pdfs');
-          }
-          if (oldVersion < 2) {
-            db.createObjectStore('chunks');
-            db.createObjectStore('embeddings');
-          }
-        },
-      });
-      setDb(database);
-    };
-
-    initDB();
+    database.open().then((database: IDBPDatabase) => setDb(database));
   }, []);
 
   useEffect(() => {
     const storedHistory = localStorage.getItem('pdfHistory');
+
     if (storedHistory) {
       setPdfHistory(JSON.parse(storedHistory));
     }
@@ -749,29 +726,7 @@ const App: React.FC = () => {
     return chunks;
   };
 
-  const getEmbeddings = async (texts: string[]) => {
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/embeddings',
-        {
-          input: texts,
-          model: 'text-embedding-ada-002',
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      return response.data.data.map((item: any) => item.embedding);
-    } catch (error) {
-      console.error('Error getting embeddings:', error);
-      return null;
-    }
-  };
-
-  const indexPDF = async (pdfFile: File) => {
+  const index = async (pdfFile: File) => {
     const time = performance.now();
 
     const arrayBuffer = await processPDF(pdfFile);
@@ -780,7 +735,7 @@ const App: React.FC = () => {
     const textChunks = chunkText(text);
     setChunks(textChunks);
 
-    const embeddingsArray = await getEmbeddings(textChunks);
+    const embeddingsArray = await ai.embed(textChunks);
 
     if (embeddingsArray) setEmbeddings(embeddingsArray);
 
@@ -791,10 +746,10 @@ const App: React.FC = () => {
 
     const elapsed = performance.now() - time;
 
-    toast(`Successfully indexed ${pdfFile.name} in ${elapsed}ms`);
+    toast.success(`Indexed ${pdfFile.name} in ${Math.round(elapsed / 1000)}s`);
   };
 
-  const loadIndex = async (fileName: string) => {
+  const load = async (fileName: string) => {
     if (db) {
       const storedChunks = await db.get('chunks', fileName);
       const storedEmbeddings = await db.get('embeddings', fileName);
@@ -847,9 +802,9 @@ const App: React.FC = () => {
           saveToLocalStorage(newHistory);
 
           // Check if index exists, if not, create it
-          const indexLoaded = await loadIndex(selectedFile.name);
+          const indexLoaded = await load(selectedFile.name);
           if (!indexLoaded) {
-            await indexPDF(selectedFile);
+            await index(selectedFile);
           }
         } catch (error) {
           console.error('Error processing file:', error);
@@ -882,7 +837,7 @@ const App: React.FC = () => {
             setPdfHistory(updatedHistory);
             saveToLocalStorage(updatedHistory);
 
-            await loadIndex(historyItem.name);
+            await load(historyItem.name);
           } else {
             toast(
               `File "${historyItem.name}" not found in storage. Please open it again.`
@@ -900,7 +855,8 @@ const App: React.FC = () => {
   const findMostRelevantChunks = async (question: string, topK: number = 3) => {
     if (!embeddings.length) return [];
 
-    const questionEmbedding = await getEmbeddings([question]);
+    const questionEmbedding = await ai.embed([question]);
+
     if (!questionEmbedding) return [];
 
     const similarities = embeddings.map((emb, i) => ({
@@ -917,45 +873,6 @@ const App: React.FC = () => {
     const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
     const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
     return dotProduct / (magnitudeA * magnitudeB);
-  };
-
-  const answerQuestion = async () => {
-    if (!question) return;
-
-    const relevantChunks = await findMostRelevantChunks(question);
-    const context = relevantChunks.join(' ');
-
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a helpful assistant that answers questions based on the given context.',
-            },
-            {
-              role: 'user',
-              content: `Context: ${context}\n\nQuestion: ${question}\n\nAnswer:`,
-            },
-          ],
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      setAnswer(response.data.choices[0].message.content);
-    } catch (error) {
-      setAnswer(
-        'Sorry, I encountered an error while trying to answer your question.'
-      );
-    }
   };
 
   return (
