@@ -24,11 +24,13 @@ import { OutlineItem, parseOutline } from '@/lib/pdf';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useReducer } from 'react';
 import { Document, Page } from 'react-pdf';
 
 import { Editor } from './editor';
 import { Outline } from './outline';
+
+const MAX_PDF_WIDTH = 600;
 
 const options = {
   cMapUrl: '/cmaps/',
@@ -37,26 +39,86 @@ const options = {
 
 type PDFFile = string | File | null;
 
-type WorkspaceProps = {
-  file: PDFFile;
+type WorkspaceState = {
+  containerWidth?: number;
+  content: string;
+  currentPage: number;
+  key: number;
+  numPages?: number;
+  outline?: OutlineItem[];
+  scale: number;
+  selectedText: string;
 };
 
-export const Workspace = ({ file }: WorkspaceProps) => {
-  const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
-  const [containerWidth, setContainerWidth] = useState<number>();
+type WorkspaceAction =
+  | { type: 'SET_CONTAINER_WIDTH'; payload: number }
+  | { type: 'SET_CONTENT'; payload: string }
+  | { type: 'SET_CURRENT_PAGE'; payload: number }
+  | { type: 'SET_KEY'; payload: number }
+  | { type: 'SET_NUM_PAGES'; payload: number }
+  | { type: 'SET_OUTLINE'; payload: OutlineItem[] }
+  | { type: 'SET_SCALE'; payload: number }
+  | { type: 'SET_SELECTED_TEXT'; payload: string }
+  | { type: 'RESET_FILE' };
 
-  const [content, setContent] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [key, setKey] = useState<number>(0); // New state for forcing re-render
-  const [numPages, setNumPages] = useState<number>();
-  const [outline, setOutline] = useState<OutlineItem[]>();
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [scale, setScale] = useState<number>(1);
-  const [selectedText, setSelectedText] = useState<string>('');
+const initialState: WorkspaceState = {
+  content: '',
+  currentPage: 1,
+  key: 0,
+  scale: 1,
+  selectedText: '',
+};
+
+function workspaceReducer(
+  state: WorkspaceState,
+  action: WorkspaceAction
+): WorkspaceState {
+  switch (action.type) {
+    case 'SET_CONTAINER_WIDTH':
+      return { ...state, containerWidth: action.payload };
+    case 'SET_CONTENT':
+      return { ...state, content: action.payload };
+    case 'SET_CURRENT_PAGE':
+      return { ...state, currentPage: action.payload };
+    case 'SET_KEY':
+      return { ...state, key: action.payload };
+    case 'SET_NUM_PAGES':
+      return { ...state, numPages: action.payload };
+    case 'SET_OUTLINE':
+      return { ...state, outline: action.payload };
+    case 'SET_SCALE':
+      return { ...state, scale: action.payload };
+    case 'SET_SELECTED_TEXT':
+      return { ...state, selectedText: action.payload };
+    case 'RESET_FILE':
+      return {
+        ...state,
+        currentPage: 1,
+        key: state.key + 1,
+        numPages: undefined,
+        scale: 1,
+        selectedText: '',
+      };
+    default:
+      return state;
+  }
+}
+
+export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
+  const [state, dispatch] = useReducer(workspaceReducer, initialState);
+
+  const [containerRef, setContainerRef] = React.useState<HTMLElement | null>(
+    null
+  );
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
-    if (entry) setContainerWidth(entry.contentRect.width);
+
+    if (entry)
+      dispatch({
+        type: 'SET_CONTAINER_WIDTH',
+        payload: entry.contentRect.width,
+      });
   }, []);
 
   useResizeObserver(containerRef, {}, onResize);
@@ -64,33 +126,46 @@ export const Workspace = ({ file }: WorkspaceProps) => {
   const onDocumentLoadSuccess = async (
     pdf: PDFDocumentProxy
   ): Promise<void> => {
-    setCurrentPage(1);
-    setNumPages(pdf.numPages);
-    setOutline(await parseOutline(pdf));
-    setPdf(pdf);
+    dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 });
+    dispatch({ type: 'SET_NUM_PAGES', payload: pdf.numPages });
+
+    const outline = await parseOutline(pdf);
+
+    if (outline) dispatch({ type: 'SET_OUTLINE', payload: outline });
   };
 
   useEffect(() => {
-    setCurrentPage(1);
-    setKey((prevKey) => prevKey + 1);
-    setNumPages(undefined);
-    setPdf(null);
-    setScale(1);
-    setSelectedText('');
+    dispatch({ type: 'RESET_FILE' });
   }, [file]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey) {
         if (event.key === 'l')
-          setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
+          dispatch({
+            type: 'SET_CURRENT_PAGE',
+            payload: Math.min(
+              state.currentPage + 1,
+              state.numPages || state.currentPage
+            ),
+          });
         else if (event.key === 'h')
-          setCurrentPage((prev) => Math.max(prev - 1, 1));
+          dispatch({
+            type: 'SET_CURRENT_PAGE',
+            payload: Math.max(state.currentPage - 1, 1),
+          });
       } else {
-        if (event.key === '+') setScale((prev) => Math.min(prev + 0.1, 2));
+        if (event.key === '+')
+          dispatch({
+            type: 'SET_SCALE',
+            payload: Math.min(state.scale + 0.1, 2),
+          });
         else if (event.key === '-')
-          setScale((prev) => Math.max(prev - 0.1, 0.5));
-        else if (event.key === '0') setScale(1);
+          dispatch({
+            type: 'SET_SCALE',
+            payload: Math.max(state.scale - 0.1, 0.5),
+          });
+        else if (event.key === '0') dispatch({ type: 'SET_SCALE', payload: 1 });
       }
     };
 
@@ -98,44 +173,49 @@ export const Workspace = ({ file }: WorkspaceProps) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [numPages]);
+  }, [state.currentPage, state.numPages, state.scale]);
 
   const nextPage = () => {
-    setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
+    dispatch({
+      type: 'SET_CURRENT_PAGE',
+      payload: Math.min(
+        state.currentPage + 1,
+        state.numPages || state.currentPage
+      ),
+    });
   };
 
   const prevPage = () => {
-    setCurrentPage((prev) => Math.max(prev - 1, 1));
+    dispatch({
+      type: 'SET_CURRENT_PAGE',
+      payload: Math.max(state.currentPage - 1, 1),
+    });
   };
 
   const handleTextSelection = () => {
     const selection = window.getSelection();
     if (selection) {
-      setSelectedText(selection.toString());
+      dispatch({ type: 'SET_SELECTED_TEXT', payload: selection.toString() });
     }
   };
 
-  const onItemClick = async (item: { pageNumber: string | number }) => {
-    setCurrentPage(
-      typeof item.pageNumber === 'string'
-        ? parseInt(item.pageNumber, 10)
-        : item.pageNumber
-    );
+  const onItemClick = (pageNumber: number) => {
+    dispatch({ type: 'SET_CURRENT_PAGE', payload: pageNumber });
   };
 
   const printSelectedText = () => {
-    console.log('Selected Text:', selectedText);
+    console.log('Selected Text:', state.selectedText);
   };
 
   const renderPaginationItems = () => {
-    if (!numPages) return null;
+    if (!state.numPages) return null;
 
     const items = [];
     const maxVisiblePages = 5;
     const halfVisible = Math.floor(maxVisiblePages / 2);
 
-    let start = Math.max(1, currentPage - halfVisible);
-    let end = Math.min(numPages, start + maxVisiblePages - 1);
+    let start = Math.max(1, state.currentPage - halfVisible);
+    let end = Math.min(state.numPages, start + maxVisiblePages - 1);
 
     if (end - start + 1 < maxVisiblePages) {
       start = Math.max(1, end - maxVisiblePages + 1);
@@ -153,8 +233,8 @@ export const Workspace = ({ file }: WorkspaceProps) => {
       items.push(
         <PaginationItem key={i}>
           <PaginationLink
-            onClick={() => setCurrentPage(i)}
-            isActive={currentPage === i}
+            onClick={() => dispatch({ type: 'SET_CURRENT_PAGE', payload: i })}
+            isActive={state.currentPage === i}
           >
             {i}
           </PaginationLink>
@@ -162,7 +242,7 @@ export const Workspace = ({ file }: WorkspaceProps) => {
       );
     }
 
-    if (end < numPages) {
+    if (end < state.numPages) {
       items.push(
         <PaginationItem key='ellipsis-end'>
           <PaginationEllipsis />
@@ -174,7 +254,7 @@ export const Workspace = ({ file }: WorkspaceProps) => {
   };
 
   const renderContent = () => {
-    if (outline && outline.length !== 0) {
+    if (state.outline && state.outline.length !== 0) {
       return (
         <ResizablePanelGroup
           direction='horizontal'
@@ -182,7 +262,7 @@ export const Workspace = ({ file }: WorkspaceProps) => {
         >
           <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
             <div className='h-full overflow-hidden'>
-              <Outline outline={outline} onItemClick={setCurrentPage} />
+              <Outline outline={state.outline} onItemClick={onItemClick} />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -217,21 +297,24 @@ export const Workspace = ({ file }: WorkspaceProps) => {
           >
             <Document
               file={file}
-              key={key}
-              onItemClick={onItemClick}
+              key={state.key}
+              onItemClick={({ pageNumber }) =>
+                onItemClick(pageNumber as number)
+              }
               onLoadSuccess={onDocumentLoadSuccess}
               options={options}
             >
               <Page
-                pageNumber={currentPage}
+                pageNumber={state.currentPage}
                 width={
-                  containerWidth
-                    ? Math.min(containerWidth, 600) * scale
-                    : 600 * scale
+                  state.containerWidth
+                    ? Math.min(state.containerWidth, MAX_PDF_WIDTH) *
+                      state.scale
+                    : MAX_PDF_WIDTH * state.scale
                 }
               />
             </Document>
-            {numPages && (
+            {state.numPages && (
               <Pagination className='mb-4 mt-4 cursor-pointer'>
                 <PaginationContent>
                   <PaginationItem>
@@ -272,8 +355,10 @@ export const Workspace = ({ file }: WorkspaceProps) => {
       <Editor
         placeholder='Take some notes...'
         className='m-4'
-        content={content}
-        onChange={setContent}
+        content={state.content}
+        onChange={(content) =>
+          dispatch({ type: 'SET_CONTENT', payload: content })
+        }
       />
     </ResizablePanel>
   );
