@@ -64,88 +64,10 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { toast } from 'sonner';
 import tippy from 'tippy.js';
 
+import { Content } from './components/content';
 import { Navbar } from './components/navbar';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
-
-interface ContentItem {
-  title: string;
-  pageNumber: number;
-  items?: ContentItem[];
-}
-
-interface ContentProps {
-  pdf: PDFDocumentProxy | null;
-  onItemClick: (pageNumber: number) => void;
-}
-
-const Content: React.FC<ContentProps> = ({ pdf, onItemClick }) => {
-  const [outline, setOutline] = useState<ContentItem[]>([]);
-
-  useEffect(() => {
-    const fetchOutline = async () => {
-      if (!pdf) return;
-
-      const outline = await pdf.getOutline();
-
-      if (!outline) return;
-
-      const processOutline = async (items: any[]): Promise<ContentItem[]> => {
-        const processedItems = await Promise.all(
-          items.map(async (item) => {
-            let pageNumber = 1;
-
-            if (item.dest) {
-              const pageIndex = await pdf.getPageIndex(item.dest[0]);
-              pageNumber = pageIndex + 1;
-            }
-
-            return {
-              title: item.title,
-              pageNumber,
-              items: item.items ? await processOutline(item.items) : undefined,
-            };
-          })
-        );
-
-        return processedItems;
-      };
-
-      setOutline(await processOutline(outline));
-    };
-
-    fetchOutline();
-  }, [pdf]);
-
-  const render = (items: ContentItem[], depth = 0) => {
-    return (
-      <ul className={`pl-${depth * 4}`}>
-        {items.map((item, index) => (
-          <li key={index} className='my-1'>
-            <button
-              className='text-left hover:underline focus:outline-none'
-              onClick={() => onItemClick(item.pageNumber)}
-            >
-              {item.title}
-            </button>
-            {item.items && render(item.items, depth + 1)}
-          </li>
-        ))}
-      </ul>
-    );
-  };
-
-  if (outline.length === 0) return null;
-
-  return (
-    <ScrollArea className='h-[900px]'>
-      <div className='p-4'>
-        <h2 className='mb-2 text-lg font-semibold'>Table of Contents</h2>
-        {render(outline)}
-      </div>
-    </ScrollArea>
-  );
-};
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -156,9 +78,6 @@ const options = {
   cMapUrl: '/cmaps/',
   standardFontDataUrl: '/standard_fonts/',
 };
-
-const resizeObserverOptions = {};
-const maxWidth = 600;
 
 type PDFFile = string | File | null;
 
@@ -174,7 +93,7 @@ const SlashCommands = Extension.create({
         editor: this.editor,
         char: '/',
         items: (query) => [
-          { title: 'Ask Question', command: () => askQuestion(query.query) },
+          { title: 'Ask q question', command: () => askQuestion(query.query) },
         ],
         render: () => {
           let component: any;
@@ -232,7 +151,7 @@ interface EditorCommandListProps {
 }
 
 const iconMap: { [key: string]: React.ReactNode } = {
-  'Ask Question': <MessageSquare className='h-5 w-5' />,
+  'Ask a question': <MessageSquare className='h-5 w-5' />,
 };
 
 export const EditorCommandList: React.FC<EditorCommandListProps> = ({
@@ -240,10 +159,6 @@ export const EditorCommandList: React.FC<EditorCommandListProps> = ({
   command,
 }) => (
   <Command className='overflow-hidden rounded-lg border bg-white shadow-md dark:bg-gray-800'>
-    <Command.Input
-      placeholder='Search for a command...'
-      className='border-b px-4 py-3 text-sm focus:outline-none dark:bg-gray-700 dark:text-white'
-    />
     <Command.List className='max-h-64 overflow-y-auto py-2'>
       <Command.Empty className='px-4 py-2 text-sm text-gray-500 dark:text-gray-400'>
         No results found.
@@ -255,7 +170,7 @@ export const EditorCommandList: React.FC<EditorCommandListProps> = ({
           className='flex cursor-pointer items-center px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700'
         >
           <span className='mr-3 text-gray-500 dark:text-gray-400'>
-            {iconMap[item.icon] || iconMap['Ask Question']}
+            {iconMap[item.icon] || iconMap['Ask a question']}
           </span>
           <span className='flex-grow'>{item.title}</span>
         </Command.Item>
@@ -369,7 +284,7 @@ const Workspace = ({ file }: WorkspaceProps) => {
     if (entry) setContainerWidth(entry.contentRect.width);
   }, []);
 
-  useResizeObserver(containerRef, resizeObserverOptions, onResize);
+  useResizeObserver(containerRef, {}, onResize);
 
   const onDocumentLoadSuccess = (pdf: PDFDocumentProxy): void => {
     setNumPages(pdf.numPages);
@@ -498,18 +413,18 @@ const Workspace = ({ file }: WorkspaceProps) => {
               className='flex flex-col items-center'
             >
               <Document
-                key={key} // Add key prop here
                 file={file}
+                key={key}
+                onItemClick={onItemClick}
                 onLoadSuccess={onDocumentLoadSuccess}
-                onItemClick={onItemClick} // Add this line
                 options={options}
               >
                 <Page
                   pageNumber={currentPage}
                   width={
                     containerWidth
-                      ? Math.min(containerWidth, maxWidth) * scale
-                      : maxWidth * scale
+                      ? Math.min(containerWidth, 600) * scale
+                      : 600 * scale
                   }
                 />
               </Document>
