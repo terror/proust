@@ -476,12 +476,12 @@ const Workspace = ({ file }: WorkspaceProps) => {
           <ContextMenuSeparator />
           <ContextMenuItem onClick={nextPage}>
             <ChevronRight className='mr-2 h-4 w-4' />
-            Next page
+            <p className='mr-2'>Next page</p>
             <ContextMenuShortcut>⌃L</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={prevPage}>
             <ChevronLeft className='mr-2 h-4 w-4' />
-            Previous page
+            <p className='mr-2'>Previous page</p>
             <ContextMenuShortcut>⌃H</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuContent>
