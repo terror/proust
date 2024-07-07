@@ -61,9 +61,9 @@ import tippy from 'tippy.js';
 
 import { Content } from './components/content';
 import { Navbar } from './components/navbar';
-import { OutlineItem, parseOutline } from './components/pdf';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
+import { OutlineItem, parseOutline } from './lib/pdf';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
