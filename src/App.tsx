@@ -66,6 +66,7 @@ import tippy from 'tippy.js';
 
 import { Content } from './components/content';
 import { Navbar } from './components/navbar';
+import { OutlineItem, parseOutline } from './components/pdf';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
 
@@ -271,13 +272,14 @@ const Workspace = ({ file }: WorkspaceProps) => {
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
 
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [numPages, setNumPages] = useState<number>();
-  const [selectedText, setSelectedText] = useState<string>('');
-  const [scale, setScale] = useState<number>(1);
   const [content, setContent] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [key, setKey] = useState<number>(0); // New state for forcing re-render
+  const [numPages, setNumPages] = useState<number>();
+  const [outline, setOutline] = useState<OutlineItem[]>();
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [scale, setScale] = useState<number>(1);
+  const [selectedText, setSelectedText] = useState<string>('');
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -286,34 +288,40 @@ const Workspace = ({ file }: WorkspaceProps) => {
 
   useResizeObserver(containerRef, {}, onResize);
 
-  const onDocumentLoadSuccess = (pdf: PDFDocumentProxy): void => {
-    setNumPages(pdf.numPages);
-    setPdf(pdf);
+  const onDocumentLoadSuccess = async (
+    pdf: PDFDocumentProxy
+  ): Promise<void> => {
     setCurrentPage(1);
+    setNumPages(pdf.numPages);
+    setOutline(await parseOutline(pdf));
+    setPdf(pdf);
   };
 
   useEffect(() => {
-    setPdf(null);
     setCurrentPage(1);
-    setNumPages(undefined);
-    setSelectedText('');
-    setScale(1);
     setKey((prevKey) => prevKey + 1);
+    setNumPages(undefined);
+    setPdf(null);
+    setScale(1);
+    setSelectedText('');
   }, [file]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'k')
-        setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
-      else if (event.key === 'j')
-        setCurrentPage((prev) => Math.max(prev - 1, 1));
-      else if (event.key === '+') setScale((prev) => Math.min(prev + 0.1, 2));
-      else if (event.key === '-') setScale((prev) => Math.max(prev - 0.1, 0.5));
-      else if (event.key === '0') setScale(1);
+      if (event.ctrlKey) {
+        if (event.key === 'l')
+          setCurrentPage((prev) => Math.min(prev + 1, numPages || prev));
+        else if (event.key === 'h')
+          setCurrentPage((prev) => Math.max(prev - 1, 1));
+      } else {
+        if (event.key === '+') setScale((prev) => Math.min(prev + 0.1, 2));
+        else if (event.key === '-')
+          setScale((prev) => Math.max(prev - 0.1, 0.5));
+        else if (event.key === '0') setScale(1);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -397,12 +405,16 @@ const Workspace = ({ file }: WorkspaceProps) => {
       className='h-[calc(100vh-120px)]'
       direction='horizontal'
     >
-      <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
-        <div className='h-full overflow-hidden'>
-          <Content pdf={pdf} onItemClick={setCurrentPage} />
-        </div>
-      </ResizablePanel>
-      <ResizableHandle withHandle />
+      {outline && outline.length !== 0 && (
+        <>
+          <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
+            <div className='h-full overflow-hidden'>
+              <Content outline={outline} onItemClick={setCurrentPage} />
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+        </>
+      )}
       <ResizablePanel className='m-4'>
         <ContextMenu>
           <ContextMenuTrigger>
@@ -448,24 +460,16 @@ const Workspace = ({ file }: WorkspaceProps) => {
               <MessageSquare className='mr-2 h-4 w-4' />
               Ask a question
             </ContextMenuItem>
-            <ContextMenuItem onClick={printSelectedText}>
-              <TextSelection className='mr-2 h-4 w-4' />
-              Summarize selection
-            </ContextMenuItem>
-            <ContextMenuItem onClick={printSelectedText}>
-              <FileText className='mr-2 h-4 w-4' />
-              Summarize page
-            </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={nextPage}>
               <ChevronRight className='mr-2 h-4 w-4' />
               Next page
-              <ContextMenuShortcut>k</ContextMenuShortcut>
+              <ContextMenuShortcut>⌃L</ContextMenuShortcut>
             </ContextMenuItem>
             <ContextMenuItem onClick={prevPage}>
               <ChevronLeft className='mr-2 h-4 w-4' />
               Previous page
-              <ContextMenuShortcut>j</ContextMenuShortcut>
+              <ContextMenuShortcut>⌃H</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
