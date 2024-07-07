@@ -50,12 +50,7 @@ import { Command } from 'cmdk';
 import { IDBPDatabase } from 'idb';
 import 'katex/dist/katex.min.css';
 import { BookText, File as FileIcon, MessageSquare } from 'lucide-react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  TextSelection,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -94,7 +89,7 @@ const SlashCommands = Extension.create({
         editor: this.editor,
         char: '/',
         items: (query) => [
-          { title: 'Ask q question', command: () => askQuestion(query.query) },
+          { title: 'Ask a question', command: () => askQuestion(query.query) },
         ],
         render: () => {
           let component: any;
@@ -400,91 +395,112 @@ const Workspace = ({ file }: WorkspaceProps) => {
     return items;
   };
 
-  return (
-    <ResizablePanelGroup
-      className='h-[calc(100vh-120px)]'
-      direction='horizontal'
-    >
-      {outline && outline.length !== 0 && (
-        <>
+  const renderContent = () => {
+    if (outline && outline.length !== 0) {
+      return (
+        <ResizablePanelGroup
+          direction='horizontal'
+          className='h-[calc(100vh-120px)]'
+        >
           <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
             <div className='h-full overflow-hidden'>
               <Content outline={outline} onItemClick={setCurrentPage} />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
-        </>
-      )}
-      <ResizablePanel className='m-4'>
-        <ContextMenu>
-          <ContextMenuTrigger>
-            <div
-              ref={setContainerRef}
-              onMouseUp={handleTextSelection}
-              onTouchEnd={handleTextSelection}
-              className='flex flex-col items-center'
+          {renderMainPanel()}
+          <ResizableHandle withHandle />
+          {renderEditorPanel()}
+        </ResizablePanelGroup>
+      );
+    } else {
+      return (
+        <ResizablePanelGroup
+          direction='horizontal'
+          className='h-[calc(100vh-120px)]'
+        >
+          {renderMainPanel()}
+          <ResizableHandle withHandle />
+          {renderEditorPanel()}
+        </ResizablePanelGroup>
+      );
+    }
+  };
+
+  const renderMainPanel = () => (
+    <ResizablePanel className='m-4' minSize={30}>
+      <ContextMenu>
+        <ContextMenuTrigger>
+          <div
+            ref={setContainerRef}
+            onMouseUp={handleTextSelection}
+            onTouchEnd={handleTextSelection}
+            className='flex flex-col items-center'
+          >
+            <Document
+              file={file}
+              key={key}
+              onItemClick={onItemClick}
+              onLoadSuccess={onDocumentLoadSuccess}
+              options={options}
             >
-              <Document
-                file={file}
-                key={key}
-                onItemClick={onItemClick}
-                onLoadSuccess={onDocumentLoadSuccess}
-                options={options}
-              >
-                <Page
-                  pageNumber={currentPage}
-                  width={
-                    containerWidth
-                      ? Math.min(containerWidth, 600) * scale
-                      : 600 * scale
-                  }
-                />
-              </Document>
-              {numPages && (
-                <Pagination className='mb-4 mt-4 cursor-pointer'>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious onClick={prevPage} />
-                    </PaginationItem>
-                    {renderPaginationItems()}
-                    <PaginationItem>
-                      <PaginationNext onClick={nextPage} />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              )}
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={printSelectedText}>
-              <MessageSquare className='mr-2 h-4 w-4' />
-              Ask a question
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={nextPage}>
-              <ChevronRight className='mr-2 h-4 w-4' />
-              Next page
-              <ContextMenuShortcut>⌃L</ContextMenuShortcut>
-            </ContextMenuItem>
-            <ContextMenuItem onClick={prevPage}>
-              <ChevronLeft className='mr-2 h-4 w-4' />
-              Previous page
-              <ContextMenuShortcut>⌃H</ContextMenuShortcut>
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </ResizablePanel>
-      <ResizableHandle withHandle />
-      <ResizablePanel defaultSize={25}>
-        <Editor
-          placeholder='Take some notes...'
-          className='m-4'
-          content={content}
-          onChange={setContent}
-        />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+              <Page
+                pageNumber={currentPage}
+                width={
+                  containerWidth
+                    ? Math.min(containerWidth, 600) * scale
+                    : 600 * scale
+                }
+              />
+            </Document>
+            {numPages && (
+              <Pagination className='mb-4 mt-4 cursor-pointer'>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious onClick={prevPage} />
+                  </PaginationItem>
+                  {renderPaginationItems()}
+                  <PaginationItem>
+                    <PaginationNext onClick={nextPage} />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={printSelectedText}>
+            <MessageSquare className='mr-2 h-4 w-4' />
+            Ask a question
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={nextPage}>
+            <ChevronRight className='mr-2 h-4 w-4' />
+            Next page
+            <ContextMenuShortcut>⌃L</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={prevPage}>
+            <ChevronLeft className='mr-2 h-4 w-4' />
+            Previous page
+            <ContextMenuShortcut>⌃H</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </ResizablePanel>
   );
+
+  const renderEditorPanel = () => (
+    <ResizablePanel defaultSize={25} minSize={20}>
+      <Editor
+        placeholder='Take some notes...'
+        className='m-4'
+        content={content}
+        onChange={setContent}
+      />
+    </ResizablePanel>
+  );
+
+  return renderContent();
 };
 
 function CommandMenu({
