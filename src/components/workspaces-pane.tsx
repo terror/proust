@@ -27,7 +27,7 @@ export const WorkspacesPane = ({
         <SheetHeader>
           <SheetTitle>Workspaces</SheetTitle>
           <SheetDescription>
-            Your recently opened PDFs. Click on one to open it again.
+            Your recently opened workspaces. Click on one to open it again.
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className='mt-4 h-[80vh] w-full'>

@@ -19,10 +19,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 export type Workspace = {
-  name: string;
+  content: ArrayBuffer;
   lastOpened: string;
-  size: number;
+  name: string;
   notes: string;
+  size: number;
 };
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -40,13 +41,10 @@ const App: React.FC = () => {
   const [workspacesPaneOpen, setWorkspacesPaneOpen] = useState(false);
 
   useEffect(() => {
-    database.open().then((database: IDBPDatabase) => setDb(database));
-  }, []);
-
-  useEffect(() => {
-    const storedHistory = localStorage.getItem('pdfHistory');
-
-    if (storedHistory) setWorkspaces(JSON.parse(storedHistory));
+    database.open().then((database: IDBPDatabase) => {
+      setDb(database);
+      loadWorkspacesFromDatabase(database);
+    });
   }, []);
 
   useEffect(() => {
@@ -55,9 +53,30 @@ const App: React.FC = () => {
     };
   }, [fileUrl]);
 
-  const saveToLocalStorage = useCallback((history: Workspace[]) => {
-    localStorage.setItem('pdfHistory', JSON.stringify(history));
-  }, []);
+  const loadWorkspacesFromDatabase = async (database: IDBPDatabase) => {
+    try {
+      const workspaces = await database.getAll('workspaces');
+      setWorkspaces(workspaces);
+    } catch (error) {
+      console.error('Failed to load workspaces from database:', error);
+      toast.error('Failed to load workspaces');
+    }
+  };
+
+  const saveWorkspaceToDatabase = async (workspace: Workspace) => {
+    if (!db) {
+      toast.error('Database not initialized');
+      return;
+    }
+
+    try {
+      await db.put('workspaces', workspace, workspace.name);
+      const updatedWorkspaces = await db.getAll('workspaces');
+      setWorkspaces(updatedWorkspaces);
+    } catch (error) {
+      toast.error('Failed to save workspace');
+    }
+  };
 
   const process = async (file: File): Promise<ArrayBuffer> => {
     return new Promise((resolve, reject) => {
@@ -157,20 +176,15 @@ const App: React.FC = () => {
           )
         );
 
-        await db.put('pdfs', arrayBuffer, selectedFile.name);
+        const newWorkspace: Workspace = {
+          name: selectedFile.name,
+          lastOpened: new Date().toISOString(),
+          size: selectedFile.size,
+          notes: '',
+          content: arrayBuffer,
+        };
 
-        const newHistory = [
-          {
-            name: selectedFile.name,
-            lastOpened: new Date().toISOString(),
-            size: selectedFile.size,
-            notes,
-          },
-          ...workspaces.filter((item) => item.name !== selectedFile.name),
-        ].slice(0, 10);
-
-        setWorkspaces(newHistory);
-        saveToLocalStorage(newHistory);
+        await saveWorkspaceToDatabase(newWorkspace);
 
         const indexLoaded = await loadIndex(selectedFile.name);
 
@@ -179,7 +193,7 @@ const App: React.FC = () => {
         toast.error(`Failed to open file: \`${error}\``);
       }
     },
-    [db, workspaces, saveToLocalStorage]
+    [db]
   );
 
   const openWorkspace = useCallback(
@@ -192,32 +206,21 @@ const App: React.FC = () => {
       }
 
       try {
-        const content = await db.get('pdfs', workspace.name);
-
-        if (!content) {
-          toast.error(`Workspace "${workspace.name}" not found in database`);
-          return;
-        }
-
         setFileUrl(
-          URL.createObjectURL(new Blob([content], { type: 'application/pdf' }))
+          URL.createObjectURL(
+            new Blob([workspace.content], { type: 'application/pdf' })
+          )
         );
 
-        const updatedHistory = workspaces.map((item) =>
-          item.name === workspace.name
-            ? { ...item, lastOpened: new Date().toISOString() }
-            : item
-        );
-
-        setWorkspaces(updatedHistory);
-        saveToLocalStorage(updatedHistory);
+        workspace.lastOpened = new Date().toISOString();
+        await saveWorkspaceToDatabase(workspace);
 
         await loadIndex(workspace.name);
       } catch (error) {
         toast.error('Failed to open workspace');
       }
     },
-    [db, workspaces, saveToLocalStorage]
+    [db]
   );
 
   const findMostRelevantChunks = async (question: string, topK: number = 3) => {
