@@ -1,3 +1,4 @@
+import { ScrollText } from 'lucide-react';
 import React from 'react';
 
 import { OutlineItem } from '../lib/pdf';
@@ -38,7 +39,10 @@ export const Outline: React.FC<OutlineProps> = ({ outline, onItemClick }) => {
   return (
     <ScrollArea className='h-[900px]'>
       <div className='p-4'>
-        <h2 className='mb-2 text-lg font-semibold'>Table of Contents</h2>
+        <div className='flex space-x-2'>
+          <ScrollText />
+          <h2 className='mb-2 text-lg font-semibold'>Table of Contents</h2>
+        </div>
         <OutlineList items={outline} depth={0} onItemClick={onItemClick} />
       </div>
     </ScrollArea>
