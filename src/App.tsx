@@ -7,29 +7,22 @@ import { toast } from 'sonner';
 
 import { CommandMenu } from './components/command-menu';
 import { Navbar } from './components/navbar';
-import { Workspace } from './components/workspace';
+import { Workspace as WorkspaceComponent } from './components/workspace';
 import { WorkspacesPane } from './components/workspaces-pane';
 import * as ai from './lib/ai';
 import * as database from './lib/database';
 import { extractText, fileToArrayBuffer } from './lib/pdf';
 import { chunkText } from './lib/utils';
-
-export type Workspace = {
-  content: ArrayBuffer;
-  lastOpened: string;
-  name: string;
-  notes: string;
-  size: number;
-};
+import { relevantChunks, Workspace } from './lib/workspace';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [_chunks, setChunks] = useState<string[]>([]);
-  const [_embeddings, setEmbeddings] = useState<number[][]>([]);
-  const [_notes, _setNotes] = useState<string>('');
+  const [chunks, setChunks] = useState<string[]>([]);
+  const [embeddings, setEmbeddings] = useState<number[][]>([]);
+  const [notes, setNotes] = useState<string>('');
   const [db, setDb] = useState<IDBPDatabase | undefined>(undefined);
   const [fileUrl, setFileUrl] = useState<string | undefined>(undefined);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -76,6 +69,11 @@ const App: React.FC = () => {
   const index = async (pdfFile: File) => {
     const time = performance.now();
 
+    if (!db) {
+      toast.error('Database not initialized');
+      return;
+    }
+
     const arrayBuffer = await fileToArrayBuffer(pdfFile);
 
     const chunks = chunkText(await extractText(arrayBuffer));
@@ -84,10 +82,8 @@ const App: React.FC = () => {
     const embeddings = await ai.embed(chunks);
     if (embeddings) setEmbeddings(embeddings);
 
-    if (db) {
-      await db.put('chunks', chunks, pdfFile.name);
-      await db.put('embeddings', embeddings, pdfFile.name);
-    }
+    await db.put('chunks', chunks, pdfFile.name);
+    await db.put('embeddings', embeddings, pdfFile.name);
 
     const elapsed = performance.now() - time;
 
@@ -95,15 +91,20 @@ const App: React.FC = () => {
   };
 
   const loadIndex = async (fileName: string) => {
-    if (db) {
-      const storedChunks = await db.get('chunks', fileName);
-      const storedEmbeddings = await db.get('embeddings', fileName);
+    console.debug(`Loading index for ${fileName}`);
 
-      if (storedChunks && storedEmbeddings) {
-        setChunks(storedChunks);
-        setEmbeddings(storedEmbeddings);
-        return true;
-      }
+    if (!db) {
+      toast.error('Database not initialized');
+      return false;
+    }
+
+    const storedChunks = await db.get('chunks', fileName);
+    const storedEmbeddings = await db.get('embeddings', fileName);
+
+    if (storedChunks && storedEmbeddings) {
+      setChunks(storedChunks);
+      setEmbeddings(storedEmbeddings);
+      return true;
     }
 
     return false;
@@ -184,12 +185,37 @@ const App: React.FC = () => {
     [db]
   );
 
+  const askQuestion = async (question: string) => {
+    console.debug('Asking question:', question);
+
+    const context = await relevantChunks({
+      chunks,
+      embeddings,
+      question,
+      topK: 5
+    });
+
+    const answer = await ai.ask({
+      context: context.join(' '),
+      question,
+      // TODO: get this to be configurable
+      model: 'gpt-3.5-turbo'
+    });
+
+    console.log(answer);
+
+    if (answer)
+      setNotes((notes) => notes + answer);
+     else
+      toast.error('Failed to answer question');
+  };
+
   return (
     <div className='m-2'>
       <Navbar />
       <main className='m-8'>
         {fileUrl ? (
-          <Workspace file={fileUrl} />
+          <WorkspaceComponent notes={notes} setNotes={setNotes} askQuestion={askQuestion} file={fileUrl} />
         ) : (
           <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
             <div className='text-center'>

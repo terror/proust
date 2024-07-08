@@ -22,10 +22,10 @@ type SimilarityItem = {
 };
 
 export const relevantChunks = async ({
+  chunks,
+  embeddings,
   question,
   topK,
-  embeddings,
-  chunks,
 }: RelevantChunksInput): Promise<string[]> => {
   if (embeddings.length === 0) return [];
 

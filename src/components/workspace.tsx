@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -6,6 +7,13 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Pagination,
   PaginationContent,
@@ -22,13 +30,27 @@ import {
 } from '@/components/ui/resizable';
 import { OutlineItem, parseOutline } from '@/lib/pdf';
 import { useResizeObserver } from '@wojtekmaj/react-hooks';
-import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  MessageSquare,
+} from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import React, { useCallback, useEffect, useReducer } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { Document, Page } from 'react-pdf';
 
 import { Editor } from './editor';
 import { Outline } from './outline';
+import { Textarea } from './ui/textarea';
+import { toast } from 'sonner';
 
 const MAX_PDF_WIDTH = 600;
 
@@ -104,12 +126,103 @@ function workspaceReducer(
   }
 }
 
-export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
+interface QuestionDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedText?: string;
+  onSubmit: (question: string) => Promise<void>;
+}
+
+export const QuestionDialog: React.FC<QuestionDialogProps> = ({
+  isOpen,
+  onClose,
+  selectedText,
+  onSubmit,
+}) => {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [question, setQuestion] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+
+    setIsLoading(true);
+    try {
+      const q = selectedText ? `${selectedText}\n${question}` : question;
+      await onSubmit(q);
+      setQuestion('');
+      onClose();
+    } catch (error) {
+      toast.error(`Failed to ask question: ${error}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resize = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  useEffect(() => {
+    if (textareaRef.current) resize();
+  }, [question]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className='sm:max-w-[425px]'>
+        <DialogHeader>
+          <DialogTitle>
+            <div className='flex items-center space-x-2'>
+              <p>Ask a question</p>
+              <Sparkles className='h-5 w-5' />
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div>
+            {selectedText && (
+              <div className='my-4 border-l-4 border-gray-300 pl-4 italic text-gray-600'>
+                {selectedText}
+              </div>
+            )}
+            <Textarea
+              id='question'
+              value={question}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                setQuestion(e.target.value)
+              }
+              ref={textareaRef}
+              placeholder='Type your question here...'
+              className='resize-none border-none p-0 text-lg focus-visible:ring-0 focus-visible:ring-offset-0'
+            />
+          </div>
+          <DialogFooter>
+            <Button type='submit' disabled={isLoading || !question.trim()}>
+              {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : 'Run'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export const Workspace: React.FC<{ file: PDFFile, askQuestion: (q: string) => Promise<void>, notes: string, setNotes: (n: string) => void }> = ({ file, askQuestion, notes, setNotes }) => {
   const [state, dispatch] = useReducer(workspaceReducer, initialState);
 
   const [containerRef, setContainerRef] = React.useState<HTMLElement | null>(
     null
   );
+
+  const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
+
+  const handleAskQuestion = () => {
+    setIsQuestionDialogOpen(true);
+  };
 
   const onResize = useCallback<ResizeObserverCallback>((entries) => {
     const [entry] = entries;
@@ -201,10 +314,6 @@ export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
 
   const onItemClick = (pageNumber: number) => {
     dispatch({ type: 'SET_CURRENT_PAGE', payload: pageNumber });
-  };
-
-  const printSelectedText = () => {
-    console.log('Selected Text:', state.selectedText);
   };
 
   const renderPaginationItems = () => {
@@ -309,7 +418,7 @@ export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
                 width={
                   state.containerWidth
                     ? Math.min(state.containerWidth, MAX_PDF_WIDTH) *
-                      state.scale
+                    state.scale
                     : MAX_PDF_WIDTH * state.scale
                 }
               />
@@ -330,7 +439,7 @@ export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onClick={printSelectedText}>
+          <ContextMenuItem onClick={handleAskQuestion}>
             <MessageSquare className='mr-2 h-4 w-4' />
             Ask a question
           </ContextMenuItem>
@@ -347,6 +456,12 @@ export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+      <QuestionDialog
+        isOpen={isQuestionDialogOpen}
+        onSubmit={askQuestion}
+        onClose={() => setIsQuestionDialogOpen(false)}
+        selectedText={state.selectedText}
+      />
     </ResizablePanel>
   );
 
@@ -355,10 +470,8 @@ export const Workspace: React.FC<{ file: PDFFile }> = ({ file }) => {
       <Editor
         placeholder='Take some notes...'
         className='m-4'
-        content={state.content}
-        onChange={(content) =>
-          dispatch({ type: 'SET_CONTENT', payload: content })
-        }
+        content={notes}
+        onChange={setNotes}
       />
     </ResizablePanel>
   );

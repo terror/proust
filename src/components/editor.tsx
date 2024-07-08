@@ -7,7 +7,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Suggestion from '@tiptap/suggestion';
 import { Command } from 'cmdk';
 import { MessageSquare } from 'lucide-react';
-import { forwardRef, useCallback, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useState } from 'react';
 import tippy from 'tippy.js';
 
 import { Textarea } from './ui/textarea';
@@ -167,6 +167,12 @@ export const Editor: React.FC<EditorProps> = ({
     },
   });
 
+  useEffect(() => {
+    if (editor && content) {
+      editor.commands.setContent(content);
+    }
+  }, [editor, content]);
+
   const insertAiResponse = useCallback(() => {
     editor?.commands.insertContent(aiResponse);
     setAiResponse('');
@@ -174,10 +180,7 @@ export const Editor: React.FC<EditorProps> = ({
 
   return (
     <div className={className}>
-      <EditorContent
-        editor={editor}
-        rendereditable={<CustomEditable placeholder={placeholder} />}
-      />
+      <EditorContent editor={editor} />
       {aiResponse && (
         <div className='mt-4'>
           <p>AI Response:</p>
