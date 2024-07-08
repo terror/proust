@@ -3,9 +3,10 @@
 **proust** is a tool to help you learn more from static content.
 
 > [!WARNING]
-> This project is in very early stages. Breaking changes and half-baked ideas/implementations guaranteed.
+> This project is in very early stages. Breaking changes guaranteed.
 
-<img align="right" width="500" alt="Screenshot 2024-07-06 at 3 16 21 PM" src="https://github.com/terror/proust/assets/31192478/8cd3e8ef-3c19-4286-b879-0c6411f949be">
+<img align="right" width="500" alt="Screenshot 2024-07-08 at 2 37 59 AM" src="https://github.com/terror/proust/assets/31192478/bd9f048a-52fb-4c65-b8c7-3987b0485fad">
+
 
 It runs fully client-side and in the browser. 
 
