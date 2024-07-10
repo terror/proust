@@ -1,4 +1,4 @@
-import { Workspace } from '@/App';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -7,8 +7,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { ScrollArea } from '@radix-ui/react-scroll-area';
+import { File } from 'lucide-react';
 
-import { Button } from './ui/button';
+import { Workspace } from '../lib/workspace';
 
 export const WorkspacesPane = ({
   isOpen,
@@ -21,6 +22,11 @@ export const WorkspacesPane = ({
   setIsOpen: (isOpen: boolean) => void;
   workspaces: Workspace[];
 }) => {
+  const sortedWorkspaces = [...workspaces].sort(
+    (a, b) =>
+      new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime()
+  );
+
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetContent>
@@ -31,17 +37,29 @@ export const WorkspacesPane = ({
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className='mt-4 h-[80vh] w-full'>
-          {workspaces.map((item, index) => (
+          {sortedWorkspaces.map((item, index) => (
             <Button
               key={index}
               variant='ghost'
-              className='mb-2 w-full justify-start'
-              onClick={() => onOpenWorkspace(item)}
+              className='mb-2 w-full justify-start truncate py-6 text-left'
+              onClick={() => {
+                onOpenWorkspace(item);
+                setIsOpen(false);
+              }}
             >
-              {item.name}
-              <span className='ml-auto text-xs text-muted-foreground'>
-                {new Date(item.lastOpened).toLocaleString()}
-              </span>
+              <div className='flex w-full items-center space-x-4'>
+                <File className='flex-shrink-0' />
+                <div className='min-w-0 flex-1 overflow-hidden'>
+                  <p className='truncate'>
+                    {item.name.endsWith('.pdf')
+                      ? item.name.slice(0, -4)
+                      : item.name}
+                  </p>
+                  <p className='text-xs text-muted-foreground'>
+                    Last opened on {new Date(item.lastOpened).toLocaleString()}
+                  </p>
+                </div>
+              </div>
             </Button>
           ))}
         </ScrollArea>

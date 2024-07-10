@@ -46,11 +46,11 @@ import React, {
   useState,
 } from 'react';
 import { Document, Page } from 'react-pdf';
+import { toast } from 'sonner';
 
 import { Editor } from './editor';
 import { Outline } from './outline';
 import { Textarea } from './ui/textarea';
-import { toast } from 'sonner';
 
 const MAX_PDF_WIDTH = 600;
 
@@ -145,6 +145,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     if (!question.trim()) return;
 
     setIsLoading(true);
@@ -185,7 +186,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         <form onSubmit={handleSubmit}>
           <div>
             {selectedText && (
-              <div className='my-4 border-l-4 border-gray-300 pl-4 italic text-gray-600'>
+              <div className='mb-4 border-l-4 border-gray-300 pl-4 italic text-gray-600'>
                 {selectedText}
               </div>
             )}
@@ -211,7 +212,12 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   );
 };
 
-export const Workspace: React.FC<{ file: PDFFile, askQuestion: (q: string) => Promise<void>, notes: string, setNotes: (n: string) => void }> = ({ file, askQuestion, notes, setNotes }) => {
+export const Workspace: React.FC<{
+  file: PDFFile;
+  askQuestion: (q: string) => Promise<void>;
+  notes: string;
+  setNotes: (n: string) => void;
+}> = ({ file, askQuestion, notes, setNotes }) => {
   const [state, dispatch] = useReducer(workspaceReducer, initialState);
 
   const [containerRef, setContainerRef] = React.useState<HTMLElement | null>(
@@ -418,7 +424,7 @@ export const Workspace: React.FC<{ file: PDFFile, askQuestion: (q: string) => Pr
                 width={
                   state.containerWidth
                     ? Math.min(state.containerWidth, MAX_PDF_WIDTH) *
-                    state.scale
+                      state.scale
                     : MAX_PDF_WIDTH * state.scale
                 }
               />

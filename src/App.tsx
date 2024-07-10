@@ -13,7 +13,7 @@ import * as ai from './lib/ai';
 import * as database from './lib/database';
 import { extractText, fileToArrayBuffer } from './lib/pdf';
 import { chunkText } from './lib/utils';
-import { relevantChunks, Workspace } from './lib/workspace';
+import { Workspace, relevantChunks } from './lib/workspace';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -192,22 +192,20 @@ const App: React.FC = () => {
       chunks,
       embeddings,
       question,
-      topK: 5
+      topK: 5,
     });
 
     const answer = await ai.ask({
       context: context.join(' '),
       question,
       // TODO: get this to be configurable
-      model: 'gpt-3.5-turbo'
+      model: 'gpt-3.5-turbo',
     });
 
     console.log(answer);
 
-    if (answer)
-      setNotes((notes) => notes + answer);
-     else
-      toast.error('Failed to answer question');
+    if (answer) setNotes((notes) => notes + answer);
+    else toast.error('Failed to answer question');
   };
 
   return (
@@ -215,7 +213,12 @@ const App: React.FC = () => {
       <Navbar />
       <main className='m-8'>
         {fileUrl ? (
-          <WorkspaceComponent notes={notes} setNotes={setNotes} askQuestion={askQuestion} file={fileUrl} />
+          <WorkspaceComponent
+            notes={notes}
+            setNotes={setNotes}
+            askQuestion={askQuestion}
+            file={fileUrl}
+          />
         ) : (
           <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
             <div className='text-center'>
