@@ -1,5 +1,6 @@
 import { IDBPDatabase } from 'idb';
 import 'katex/dist/katex.min.css';
+import { Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   const [fileUrl, setFileUrl] = useState<string | undefined>(undefined);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesPaneOpen, setWorkspacesPaneOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     database.open().then((database: IDBPDatabase) => {
@@ -43,10 +45,8 @@ const App: React.FC = () => {
 
   const loadWorkspacesFromDatabase = async (database: IDBPDatabase) => {
     try {
-      const workspaces = await database.getAll('workspaces');
-      setWorkspaces(workspaces);
+      setWorkspaces(await database.getAll('workspaces'));
     } catch (error) {
-      console.error('Failed to load workspaces from database:', error);
       toast.error('Failed to load workspaces');
     }
   };
@@ -129,6 +129,8 @@ const App: React.FC = () => {
         return;
       }
 
+      setIsLoading(true);
+
       try {
         const arrayBuffer = await fileToArrayBuffer(selectedFile);
 
@@ -153,6 +155,8 @@ const App: React.FC = () => {
         if (!indexLoaded) await index(selectedFile);
       } catch (error) {
         toast.error(`Failed to open file: \`${error}\``);
+      } finally {
+        setIsLoading(false);
       }
     },
     [db]
@@ -167,6 +171,8 @@ const App: React.FC = () => {
         return;
       }
 
+      setIsLoading(true);
+
       try {
         setFileUrl(
           URL.createObjectURL(
@@ -180,6 +186,8 @@ const App: React.FC = () => {
         await loadIndex(workspace.name);
       } catch (error) {
         toast.error('Failed to open workspace');
+      } finally {
+        setIsLoading(false);
       }
     },
     [db]
@@ -212,7 +220,13 @@ const App: React.FC = () => {
     <div className='m-2'>
       <Navbar />
       <main className='m-8'>
-        {fileUrl ? (
+        {isLoading ? (
+          <div className='flex h-[calc(100vh-200px)] items-center justify-center'>
+            <div className='text-center'>
+              <Loader2 className='mb-4 h-12 w-12 animate-spin text-muted-foreground' />
+            </div>
+          </div>
+        ) : fileUrl ? (
           <WorkspaceComponent
             notes={notes}
             setNotes={setNotes}
