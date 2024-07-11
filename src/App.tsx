@@ -22,13 +22,13 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [chunks, setChunks] = useState<string[]>([]);
-  const [embeddings, setEmbeddings] = useState<number[][]>([]);
-  const [notes, setNotes] = useState<string>('');
   const [db, setDb] = useState<IDBPDatabase | undefined>(undefined);
+  const [embeddings, setEmbeddings] = useState<number[][]>([]);
   const [fileUrl, setFileUrl] = useState<string | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [notes, setNotes] = useState<string>('');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesPaneOpen, setWorkspacesPaneOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     database.open().then((database: IDBPDatabase) => {
@@ -44,11 +44,35 @@ const App: React.FC = () => {
   }, [fileUrl]);
 
   const loadWorkspacesFromDatabase = async (database: IDBPDatabase) => {
+    setIsLoading(true);
+
     try {
-      setWorkspaces(await database.getAll('workspaces'));
+      database.getAll('workspaces').then((workspaces) => {
+        setWorkspaces(workspaces);
+
+        const mostRecent = mostRecentWorkspace(workspaces);
+
+        if (mostRecent) {
+          setFileUrl(
+            URL.createObjectURL(
+              new Blob([mostRecent.content], { type: 'application/pdf' })
+            )
+          );
+        }
+
+        setIsLoading(false);
+      });
     } catch (error) {
       toast.error('Failed to load workspaces');
     }
+  };
+
+  const mostRecentWorkspace = (workspaces: Workspace[]): Workspace => {
+    return workspaces.reduce((a, b) =>
+      new Date(a.lastOpened).getTime() > new Date(b.lastOpened).getTime()
+        ? a
+        : b
+    );
   };
 
   const saveWorkspaceToDatabase = async (workspace: Workspace) => {
