@@ -67,7 +67,11 @@ const App: React.FC = () => {
     }
   };
 
-  const mostRecentWorkspace = (workspaces: Workspace[]): Workspace => {
+  const mostRecentWorkspace = (
+    workspaces: Workspace[]
+  ): Workspace | undefined => {
+    if (workspaces.length === 0) return undefined;
+
     return workspaces.reduce((a, b) =>
       new Date(a.lastOpened).getTime() > new Date(b.lastOpened).getTime()
         ? a
@@ -229,15 +233,16 @@ const App: React.FC = () => {
 
     const answer = await ai.ask({
       context: context.join(' '),
-      question,
-      // TODO: get this to be configurable
       model: 'gpt-3.5-turbo',
+      question,
     });
 
-    console.log(answer);
+    if (!answer) {
+      toast.error('Failed to answer question');
+      return;
+    }
 
-    if (answer) setNotes((notes) => notes + answer);
-    else toast.error('Failed to answer question');
+    setNotes((notes) => notes + answer);
   };
 
   return (
