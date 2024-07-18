@@ -1,7 +1,10 @@
 import { ThemeProvider } from '@/components/theme-provider';
+import 'katex/dist/katex.min.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { BrowserRouter } from 'react-router-dom';
 
 import App from './App.tsx';
