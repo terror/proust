@@ -84,12 +84,16 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               }
               ref={textareaRef}
               placeholder='Type your question here...'
-              className='resize-none border-none p-0 text-lg focus-visible:ring-0 focus-visible:ring-offset-0'
+              className='resize-none border-none p-1 text-lg focus-visible:ring-0 focus-visible:ring-offset-0'
             />
           </div>
           <DialogFooter>
-            <Button type='submit' disabled={isLoading || !question.trim()}>
-              {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : 'Run'}
+            <Button
+              className='w-full'
+              type='submit'
+              disabled={isLoading || !question.trim()}
+            >
+              {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : 'Ask'}
             </Button>
           </DialogFooter>
         </form>

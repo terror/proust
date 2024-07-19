@@ -14,12 +14,9 @@ export const Navbar = () => {
       <NavigationMenu>
         <NavigationMenuList>
           <NavigationMenuItem>
-            <Link to='/' className='text-xl font-semibold'>
+            <Link to='/' className='flex flex-col items-start'>
               <NavigationMenuLink>
-                proust{' '}
-                <p className='text-sm italic text-muted-foreground'>
-                  a learning tool
-                </p>
+                  <span className='text-xl font-semibold'>proust</span>
               </NavigationMenuLink>
             </Link>
           </NavigationMenuItem>
